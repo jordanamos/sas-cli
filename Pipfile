@@ -6,7 +6,6 @@ name = "pypi"
 [packages]
 saspy = "*"
 pandas = "*"
-argparse = "*"
 
 [dev-packages]
 black = "*"
