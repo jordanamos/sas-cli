@@ -1,7 +1,7 @@
 import argparse
-import os
 from typing import Sequence
 
+from _file_helpers import InvalidFileException, is_valid_file
 from saspy import SASsession
 
 
@@ -14,14 +14,6 @@ def run_program(args: argparse.Namespace) -> int:
     sas.endsas()
 
     return 0
-
-
-def is_valid_file(filepath: str) -> bool:
-    return os.path.exists(filepath) and filepath.endswith(".sas")
-
-
-class InvalidFileException(Exception):
-    pass
 
 
 def main(argv: Sequence[str] | None = None) -> int:
