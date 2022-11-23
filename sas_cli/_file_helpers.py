@@ -1,9 +1,14 @@
 import os
+from argparse import ArgumentTypeError
 
 
-def is_valid_file(filepath: str) -> bool:
-    return os.path.exists(filepath) and filepath.endswith(".sas")
+def valid_sas_file(filepath: str) -> str:
+    if not (os.path.exists(filepath) and filepath.endswith(".sas")):
+        raise InvalidFileException(
+            f"'{filepath}' does not exist or is not a valid .sas file"
+        )
+    return filepath
 
 
-class InvalidFileException(Exception):
+class InvalidFileException(ArgumentTypeError):
     pass
