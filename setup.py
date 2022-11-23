@@ -30,5 +30,9 @@ setup(
     classifiers=[
         "License :: OSI Approved :: MIT License",
         "Natural Language :: English",
+        "Programming Language :: Python :: 3 :: Only",
+        "Programming Language :: Python :: 3.10",
+        "Programming Language :: Python",
+        "Intended Audience :: Developers",
     ],
 )
