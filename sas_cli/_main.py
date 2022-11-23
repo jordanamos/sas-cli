@@ -18,9 +18,10 @@ def run_program(args: argparse.Namespace) -> int:
     with open(args.filepath) as f:
         contents_text = f.read()
 
-    sas = SASsession()
-    sas.submit(contents_text)
-    sas.endsas()
+    with SASsession(cfgfile="sascfg_personal.py") as sas:
+        result = sas.submit(contents_text)
+
+    print(result["LOG"])
     return 0
 
 
