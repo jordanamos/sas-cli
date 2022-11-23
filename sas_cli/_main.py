@@ -1,9 +1,16 @@
 import argparse
+import os
 from typing import Sequence
 
 from saspy import SASsession
 
-from sas_cli._file_helpers import valid_sas_file
+
+def valid_sas_file(filepath: str) -> str:
+    if not (os.path.exists(filepath) and filepath.endswith(".sas")):
+        raise argparse.ArgumentTypeError(
+            f"'{filepath}' does not exist or is not a valid .sas file"
+        )
+    return filepath
 
 
 def run_program(args: argparse.Namespace) -> int:
@@ -30,7 +37,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     args = parser.parse_args(argv)
     ret = run_program(args)
-
     return ret
 
 
