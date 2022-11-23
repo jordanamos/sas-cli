@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "2e40f7acae2bc6d6895c796b7d10925f456ca3f82e5152f5a3e9e340eaa2e1e8"
+            "sha256": "92fa607f4407db61931c1574dbc2271ea8af5faaa6053288219991ad2f999d75"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -47,7 +47,7 @@
                 "sha256:f063b69b090c9d918f9df0a12116029e274daf0181df392839661c4c7ec9018a",
                 "sha256:f9a909a8bae284d46bbfdefbdd4a262ba19d3bc9921b1e76126b1d21c3c34135"
             ],
-            "markers": "python_version >= '3.10'",
+            "markers": "python_version >= '3.8'",
             "version": "==1.23.5"
         },
         "pandas": {
@@ -97,6 +97,10 @@
                 "sha256:e89512406b793ca39f5971bc999cc538ce125c0e51c27941bef4568b460095e2"
             ],
             "version": "==2022.6"
+        },
+        "sas-cli": {
+            "editable": true,
+            "path": "."
         },
         "saspy": {
             "hashes": [

@@ -1,8 +1,9 @@
 import argparse
 from typing import Sequence
 
-from _file_helpers import InvalidFileException, is_valid_file
 from saspy import SASsession
+
+from sas_cli._file_helpers import InvalidFileException, is_valid_file
 
 
 def run_program(args: argparse.Namespace) -> int:

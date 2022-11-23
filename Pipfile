@@ -6,6 +6,7 @@ name = "pypi"
 [packages]
 saspy = "*"
 pandas = "*"
+sas-cli = {editable = true, path = "."}
 
 [dev-packages]
 black = "*"
