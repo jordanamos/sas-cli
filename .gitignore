@@ -9,6 +9,3 @@ __pycache__/
 #packaging
 build/
 *.egg-info/
-
-#misc
-*.sas
