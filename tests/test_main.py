@@ -1,22 +1,8 @@
-import tempfile
 from argparse import ArgumentTypeError
 
 import pytest
 
 from sas_cli._main import main, valid_sas_file
-
-
-@pytest.fixture
-def non_existent_file_path():
-    return "./path/to/nonexistent/sas/file.sas"
-
-
-@pytest.fixture
-def temp_sas_file():
-    with tempfile.NamedTemporaryFile(
-        mode="r", suffix=".sas", dir="./testing"
-    ) as temp_file:
-        yield temp_file
 
 
 def test_main_error_with_empty_string():
