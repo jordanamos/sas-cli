@@ -1,4 +1,4 @@
-from setuptools import find_packages, setup
+from setuptools import setup
 
 VERSION = "1.0.0"
 
@@ -34,5 +34,6 @@ setup(
         "Programming Language :: Python :: 3.10",
         "Programming Language :: Python",
         "Intended Audience :: Developers",
+        "Development Status :: 2 - Pre-Alpha",
     ],
 )
