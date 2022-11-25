@@ -18,6 +18,10 @@ def temp_file():
         yield temp_file
 
 
+def test_main_trivial():
+    assert main(()) == 0
+
+
 @pytest.mark.parametrize("test_input", ("", "./path/to/nonexistent/sas/file.sas"))
 def test_main_error(test_input):
     with pytest.raises(SystemExit):

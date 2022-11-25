@@ -17,9 +17,10 @@ def set_working_directory(directory: str):
 
 
 def delete_working_dir():
+    # TODO write tests
     config = configparser.ConfigParser()
-    config.read(CONFIG_FILE)
-    if config.remove_option(section="working directory", option="path"):
+    if config.read(CONFIG_FILE):
+        config.remove_option(section="working directory", option="path")
         with open(CONFIG_FILE, "w") as config_file:
             config.write(config_file)
 
@@ -38,11 +39,11 @@ def valid_sas_file(filepath: str) -> str:
     return filepath
 
 
-def existing_directory(directory):
+def existing_directory(directory: str):
     # TODO write tests
     if not os.path.isdir(directory):
         raise argparse.ArgumentTypeError(
-            f" the directory '{directory}' is not a valid directory"
+            f"the directory '{directory}' is not a valid directory"
         )
     return directory
 
@@ -74,6 +75,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument(
         "-d", "--unset-working-dir", action="store_true", dest="delete_working_dir"
     )
+
     subparsers = parser.add_subparsers(dest="command")
 
     run_parser = subparsers.add_parser("run")
@@ -87,7 +89,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ret = 0
     args = parser.parse_args(argv)
-    print(args)
 
     if args.command is None:
         if args.delete_working_dir:
