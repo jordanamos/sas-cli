@@ -18,11 +18,11 @@ def load_config(args: argparse.Namespace) -> dict:
 
     if args.delete_working_dir:
         config.set("", "working_directory", "")
-        print("unset current working directory")
+        print("Current working directory was unset")
     if args.set_working_dir:
         config.set("", "working_directory", args.set_working_dir)
         print(
-            f"current working directory set as '{args.set_working_dir}'. File paths parsed to this program will be relative from this directory"
+            f"Current working directory set as '{args.set_working_dir}'. File paths parsed to this program will be relative from this directory"
         )
 
     with open(CONFIG_FILE, "w") as config_file:
@@ -31,40 +31,45 @@ def load_config(args: argparse.Namespace) -> dict:
     return dict(config.items("DEFAULT"))
 
 
-def valid_sas_file(filepath: str) -> str:
+def valid_sas_file(filepath: str) -> bool:
     try:
         open(filepath)
     except OSError as e:
-        message = f"can't open '{filepath}': {e}"
+        message = f"Can't open '{filepath}': {e}"
         raise argparse.ArgumentTypeError(message)
 
     if not filepath.endswith(".sas"):
         raise argparse.ArgumentTypeError(
-            f"the file '{filepath}' is not a valid .sas file"
+            f"The file '{filepath}' is not a valid .sas file"
         )
-    return filepath
+    return True
 
 
 def existing_directory(directory: str):
     # TODO write tests
     if not os.path.isdir(directory):
         raise argparse.ArgumentTypeError(
-            f"the directory '{directory}' is not a valid directory"
+            f"The directory '{directory}' is not a valid directory"
         )
     return directory
 
 
 def run_program(args: argparse.Namespace, config: dict) -> int:
-    with open(args.program_path) as f:
-        program_code = f.read()
 
-    with SASsession() as sas:
-        result = sas.submit(program_code)
+    program_path = os.path.join(config.get("working_directory", ""), args.program_path)
+    if valid_sas_file(program_path):
+        print(f"\nRunning program: {program_path}\n")
+        with open(program_path) as f:
+            program_code = f.read()
 
-    if args.show_log:
-        print(result["LOG"])
+        with SASsession() as sas:
+            result = sas.submit(program_code)
 
-    return 0
+        # print(result)
+        if args.show_log:
+            print(result["LOG"])
+
+        return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -72,7 +77,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         description="Run a SAS program",
     )
     parser.add_argument(
-        "-w",
+        "-s",
         "--set-working-dir",
         metavar="DIR",
         help="""the full path to the directory you wish to work out of.
@@ -81,14 +86,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=existing_directory,
     )
     parser.add_argument(
-        "-d",
+        "-u",
         "--unset-working-dir",
         action="store_true",
         dest="delete_working_dir",
         help="unsets the current working directory",
     )
     parser.add_argument(
-        "-g",
+        "-w",
         "--get-working-dir",
         action="store_true",
         help="prints the current working directory",
@@ -100,8 +105,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_parser.add_argument(
         "program_path",
         metavar="FILE",
-        help="the full path to the SAS (.sas) program you wish to run",
-        type=valid_sas_file,
+        help="the path to the SAS (.sas) program you wish to run relative to the working directory",
     )
     run_parser.add_argument("--show-log", dest="show_log", action="store_true")
 
@@ -113,9 +117,9 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.get_working_dir:
         if working_dir is None or working_dir == "":
-            print("no current working directory set")
+            print("No current working directory set")
         else:
-            print(f"current working directory is '{working_dir}'")
+            print(f"Current working directory is '{working_dir}'")
 
     if args.command == "run":
         ret = run_program(args, config)
