@@ -1,7 +1,6 @@
 import argparse
 import configparser
 import os
-from configparser import NoOptionError, NoSectionError
 from pathlib import Path
 from typing import Sequence
 
@@ -19,7 +18,7 @@ def load_config(args: argparse.Namespace) -> dict:
 
     if args.delete_working_dir:
         config.set("", "working_directory", "")
-        print(f"unset current working directory")
+        print("unset current working directory")
     if args.set_working_dir:
         config.set("", "working_directory", args.set_working_dir)
         print(
@@ -110,10 +109,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     config = load_config(args)
+    working_dir = config.get("working_directory")
 
     if args.get_working_dir:
-        working_dir = config.get("working_directory")
-        print(f"current working directory is '{working_dir}'")
+        if working_dir is None or working_dir == "":
+            print("no current working directory set")
+        else:
+            print(f"current working directory is '{working_dir}'")
 
     if args.command == "run":
         ret = run_program(args, config)
