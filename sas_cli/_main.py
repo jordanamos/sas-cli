@@ -167,7 +167,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     # config = load_config(args)
     if args.command == "run":
         ret = run_program(args)
-    elif args.command == "dataset":
+    elif args.command == "data":
         ret = list_datasets(args)
     elif args.command == "lib":
         ret = list_lib(args)
