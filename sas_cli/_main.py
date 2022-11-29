@@ -7,6 +7,7 @@ from typing import Sequence
 from saspy import SASsession
 
 CONFIG_FILE = "config.ini"
+SAS_CONFIG_PERSONAL = os.path.join(os.getcwd(), "_sas_cfg_personal.py")
 
 
 def load_config(args: argparse.Namespace) -> dict:
@@ -49,14 +50,14 @@ def run_program(args: argparse.Namespace) -> int:
     with open(args.program_path) as f:
         program_code = f.read()
 
-    with SASsession() as sas:
-        print(f"\nRunning program: {args.program_path}\n")
+    with SASsession(cfgfile=SAS_CONFIG_PERSONAL) as sas:
+        print(f"Running program: {args.program_path}\n")
         result = sas.submit(program_code)
 
     # print(result)
     if args.show_log:
         print(result["LOG"])
-
+    print(result["LST"])
     return 0
 
 
