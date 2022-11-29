@@ -116,21 +116,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     run_parser.add_argument("-log", "--show-log", dest="show_log", action="store_true")
 
-    datasets_parser = subparsers.add_parser("dataset")
-    datasets_parser.add_argument(
+    dataset_parser = subparsers.add_parser("dataset")
+    dataset_parser.add_argument(
         "-l",
         "--libref",
         metavar="",
         help="specify the SAS internal libref (default is %(default)s). Prints a list of datasets if the dataset option is not set.",
         default="WORK",
     )
-    datasets_parser.add_argument(
+    dataset_parser.add_argument(
         "-t",
         "--table",
         metavar="",
         help="specify the SAS dataset/table name",
     )
-    datasets_parser.add_argument(
+    dataset_parser.add_argument(
         "-o",
         "--obs",
         metavar="",
@@ -138,14 +138,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="specify the amount of output observations (default is %(default)s)",
         default=10,
     )
-    datasets_parser.add_argument(
+    dataset_parser.add_argument(
         "-k",
         "--keep",
         metavar="",
         help="specify the columns to keep in the output in a quoted space separated string eg. 'column_1 column_2'",
         default="",
     )
-    datasets_parser.add_argument(
+    dataset_parser.add_argument(
         "-i",
         "--info",
         help="display info about a SAS dataset, or if no dataset provided a SAS library",
