@@ -1,9 +1,12 @@
+from __future__ import annotations
+
 import argparse
 import configparser
 import os
 from pathlib import Path
 from typing import Sequence
 
+import pandas as pd
 from saspy import SASsession
 
 CONFIG_FILE = "config.ini"
@@ -71,20 +74,16 @@ def run_program(args: argparse.Namespace) -> int:
 def list_datasets(args: argparse.Namespace) -> int:
     with SASsession(cfgfile=SAS_CONFIG_PERSONAL) as sas:
 
-        if not args.dataset:
+        if not args.table:
             print(f"Listing datasets in '{(args.libref).upper()}'", "\n")
-            print(sas.list_tables(args.libref, results="pandas"), "\n")
-            return 0
+            tables = sas.list_tables(args.libref)
+            if tables:
+                print(pd.DataFrame(tables), "\n")
         else:
-            options = {
-                "where": """""",
-                "obs": args.obs,
-            }
-            table_data = sas.sasdata(
-                table=args.dataset, libref=args.libref, dsopts=options
-            )
-            df = table_data.to_df()
+            options = {"where": """""", "obs": args.obs, "keep": args.keep}
+            df = sas.sd2df(table=args.table, libref=args.libref, dsopts=options)
             print(df)
+
     return 0
 
 
@@ -103,7 +102,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=valid_sas_file,
         # nargs="*",
     )
-    run_parser.add_argument("-l", "--show-log", dest="show_log", action="store_true")
+    run_parser.add_argument("-log", "--show-log", dest="show_log", action="store_true")
 
     datasets_parser = subparsers.add_parser("datasets")
     datasets_parser.add_argument(
@@ -114,17 +113,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         default="WORK",
     )
     datasets_parser.add_argument(
-        "-ds",
-        "--dataset",
+        "-t",
+        "--table",
         metavar="",
-        help="specify the SAS dataset name",
+        help="specify the SAS dataset/table name",
     )
     datasets_parser.add_argument(
         "-o",
         "--obs",
+        metavar="",
         type=int,
         help="specify the amount of output observations (default is %(default)s)",
         default=10,
+    )
+    datasets_parser.add_argument(
+        "-k",
+        "--keep",
+        metavar="",
+        help="specify the columns to keep in the output in a quoted space separated string eg. 'column_1 column_2'",
+        default="",
     )
 
     ret = 0
