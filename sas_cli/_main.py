@@ -76,37 +76,36 @@ def run_program(args: argparse.Namespace) -> int:
     return 0
 
 
+def list_lib(args: argparse.Namespace) -> int:
+    with SASsession(cfgfile=SAS_CONFIG_PERSONAL) as sas:
+        list_of_tables = sas.list_tables(args.libref, results="pandas")
+        if list_of_tables is not None:
+            print(list_of_tables)
+    return 0
+
+
 def list_datasets(args: argparse.Namespace) -> int:
     with SASsession(cfgfile=SAS_CONFIG_PERSONAL) as sas:
-
-        if not args.table:
-            print(f"Listing datasets in '{(args.libref).upper()}'", "\n")
-            list_of_tables = sas.list_tables(args.libref, results="pandas")
-            if list_of_tables is not None:
-                print(list_of_tables)
-        else:
-            options = {"where": """""", "obs": args.obs, "keep": args.keep}
-            try:
-                if args.info:
-                    print(
-                        sas.sasdata(table=args.table, libref=args.libref).columnInfo()
-                    )
-                else:
-                    df = sas.sd2df(table=args.table, libref=args.libref, dsopts=options)
-                    print(df)
-            except (FileNotFoundError, ValueError) as e:
-                return 1
+        try:
+            if args.info:
+                print(sas.sasdata(table=args.dataset, libref=args.libref).columnInfo())
+            else:
+                options = {"where": """""", "obs": args.obs, "keep": args.keep}
+                df = sas.sd2df(table=args.dataset, libref=args.libref, dsopts=options)
+                print(df)
+        except (FileNotFoundError, ValueError) as e:
+            return 1
     return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Run a SAS program",
+        description="A command line interface to SAS",
     )
 
     subparsers = parser.add_subparsers(dest="command")
 
-    run_parser = subparsers.add_parser("run")
+    run_parser = subparsers.add_parser("run", description="Run a SAS program file")
     run_parser.add_argument(
         "program_path",
         metavar="FILE",
@@ -116,19 +115,20 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     run_parser.add_argument("-log", "--show-log", dest="show_log", action="store_true")
 
-    dataset_parser = subparsers.add_parser("dataset")
+    dataset_parser = subparsers.add_parser(
+        "data", description="Describe or print sample data from a SAS dataset"
+    )
+    dataset_parser.add_argument(
+        "dataset",
+        metavar="DATASET",
+        help="specify the SAS dataset/table name",
+    )
     dataset_parser.add_argument(
         "-l",
         "--libref",
         metavar="",
-        help="specify the SAS internal libref (default is %(default)s). Prints a list of datasets if the dataset option is not set.",
+        help="specify the SAS internal libref (default is %(default)s)",
         default="WORK",
-    )
-    dataset_parser.add_argument(
-        "-t",
-        "--table",
-        metavar="",
-        help="specify the SAS dataset/table name",
     )
     dataset_parser.add_argument(
         "-o",
@@ -151,6 +151,16 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="display info about a SAS dataset, or if no dataset provided a SAS library",
         action="store_true",
     )
+
+    lib_parser = subparsers.add_parser(
+        "lib", description="List the datasets in a SAS library"
+    )
+    lib_parser.add_argument(
+        "libref",
+        metavar="LIBREF",
+        help="specify the SAS internal libref",
+    )
+
     ret = 0
     args = parser.parse_args(argv)
 
@@ -159,6 +169,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         ret = run_program(args)
     elif args.command == "dataset":
         ret = list_datasets(args)
+    elif args.command == "lib":
+        ret = list_lib(args)
+
     return ret
 
 
