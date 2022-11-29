@@ -53,11 +53,38 @@ def run_program(args: argparse.Namespace) -> int:
     with SASsession(cfgfile=SAS_CONFIG_PERSONAL) as sas:
         print(f"Running program: {args.program_path}\n")
         result = sas.submit(program_code)
+        sys_err = sas.SYSERR()
+        sys_err_text = sas.SYSERRORTEXT()
+
+    if sys_err > 0:
+        message = f"ERROR: An error has occured during program execution: {sys_err}: {sys_err_text}"
+        print(message)
+        return 1
 
     # print(result)
     if args.show_log:
         print(result["LOG"])
-    print(result["LST"])
+
+    return 0
+
+
+def list_datasets(args: argparse.Namespace) -> int:
+    with SASsession(cfgfile=SAS_CONFIG_PERSONAL) as sas:
+
+        if not args.dataset:
+            print(f"Listing datasets in '{(args.libref).upper()}'", "\n")
+            print(sas.list_tables(args.libref, results="pandas"), "\n")
+            return 0
+        else:
+            options = {
+                "where": """""",
+                "obs": args.obs,
+            }
+            table_data = sas.sasdata(
+                table=args.dataset, libref=args.libref, dsopts=options
+            )
+            df = table_data.to_df()
+            print(df)
     return 0
 
 
@@ -72,11 +99,33 @@ def main(argv: Sequence[str] | None = None) -> int:
     run_parser.add_argument(
         "program_path",
         metavar="FILE",
-        help="the path to the SAS (.sas) program you wish to run",
+        help="specify the path to the SAS (.sas) program you wish to run",
         type=valid_sas_file,
         # nargs="*",
     )
     run_parser.add_argument("-l", "--show-log", dest="show_log", action="store_true")
+
+    datasets_parser = subparsers.add_parser("datasets")
+    datasets_parser.add_argument(
+        "-l",
+        "--libref",
+        metavar="",
+        help="specify the SAS internal libref (default is %(default)s). Prints a list of datasets if the dataset option is not set.",
+        default="WORK",
+    )
+    datasets_parser.add_argument(
+        "-ds",
+        "--dataset",
+        metavar="",
+        help="specify the SAS dataset name",
+    )
+    datasets_parser.add_argument(
+        "-o",
+        "--obs",
+        type=int,
+        help="specify the amount of output observations (default is %(default)s)",
+        default=10,
+    )
 
     ret = 0
     args = parser.parse_args(argv)
@@ -84,7 +133,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     # config = load_config(args)
     if args.command == "run":
         ret = run_program(args)
-
+    elif args.command == "datasets":
+        ret = list_datasets(args)
     return ret
 
 

@@ -13,3 +13,4 @@ build/
 #config
 config.ini
 _sas_cfg_personal.py
+test_program.sas
