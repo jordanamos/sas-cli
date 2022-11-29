@@ -1,8 +1,7 @@
-from __future__ import annotations
-
 import argparse
 import configparser
 import os
+import sys
 from pathlib import Path
 from typing import Sequence
 
@@ -38,6 +37,7 @@ def load_config(args: argparse.Namespace) -> dict:
 def valid_sas_file(filepath: str) -> str:
     try:
         open(filepath)
+        # TODO confirm both exceptions are thrown by open
     except (FileNotFoundError, OSError) as e:
         message = f"Can't open '{filepath}': {e}"
         raise argparse.ArgumentTypeError(message)
@@ -59,9 +59,14 @@ def run_program(args: argparse.Namespace) -> int:
         sys_err = sas.SYSERR()
         sys_err_text = sas.SYSERRORTEXT()
 
-    if sys_err > 0:
-        message = f"ERROR: An error has occured during program execution: {sys_err}: {sys_err_text}"
-        print(message)
+    if sys_err_text:
+        message = (
+            f"An error has occured during program execution: {sys_err}: {sys_err_text}"
+        )
+        print(message, file=sys.stderr)
+        show_log = input("Do you wish to view the log before exiting? [y]es / [n]o:")
+        if show_log.lower() in ["y", "yes", "si"]:
+            print(result["LOG"])
         return 1
 
     # print(result)
@@ -76,14 +81,21 @@ def list_datasets(args: argparse.Namespace) -> int:
 
         if not args.table:
             print(f"Listing datasets in '{(args.libref).upper()}'", "\n")
-            tables = sas.list_tables(args.libref)
-            if tables:
-                print(pd.DataFrame(tables), "\n")
+            list_of_tables = sas.list_tables(args.libref, results="pandas")
+            if list_of_tables is not None:
+                print(list_of_tables)
         else:
             options = {"where": """""", "obs": args.obs, "keep": args.keep}
-            df = sas.sd2df(table=args.table, libref=args.libref, dsopts=options)
-            print(df)
-
+            try:
+                if args.info:
+                    print(
+                        sas.sasdata(table=args.table, libref=args.libref).columnInfo()
+                    )
+                else:
+                    df = sas.sd2df(table=args.table, libref=args.libref, dsopts=options)
+                    print(df)
+            except (FileNotFoundError, ValueError) as e:
+                return 1
     return 0
 
 
@@ -104,7 +116,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
     run_parser.add_argument("-log", "--show-log", dest="show_log", action="store_true")
 
-    datasets_parser = subparsers.add_parser("datasets")
+    datasets_parser = subparsers.add_parser("dataset")
     datasets_parser.add_argument(
         "-l",
         "--libref",
@@ -133,14 +145,19 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="specify the columns to keep in the output in a quoted space separated string eg. 'column_1 column_2'",
         default="",
     )
-
+    datasets_parser.add_argument(
+        "-i",
+        "--info",
+        help="display info about a SAS dataset, or if no dataset provided a SAS library",
+        action="store_true",
+    )
     ret = 0
     args = parser.parse_args(argv)
 
     # config = load_config(args)
     if args.command == "run":
         ret = run_program(args)
-    elif args.command == "datasets":
+    elif args.command == "dataset":
         ret = list_datasets(args)
     return ret
 
