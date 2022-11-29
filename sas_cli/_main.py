@@ -1,36 +1,11 @@
 import argparse
 import configparser
-import os
 import sys
 from pathlib import Path
 from typing import Sequence
 
 import pandas as pd
 from saspy import SASsession
-
-CONFIG_FILE = "config.ini"
-
-
-def load_config(args: argparse.Namespace) -> dict:
-
-    Path(CONFIG_FILE).touch()
-
-    config = configparser.ConfigParser()
-    config.read(CONFIG_FILE)
-
-    if args.delete_working_dir:
-        config.set("", "working_directory", "")
-        print("Current working directory was unset")
-    if args.set_working_dir:
-        config.set("", "working_directory", args.set_working_dir)
-        print(
-            f"Current working directory set as '{args.set_working_dir}'. File paths parsed to this program will be relative from this directory"
-        )
-
-    with open(CONFIG_FILE, "w") as config_file:
-        config.write(config_file)
-
-    return dict(config.items("DEFAULT"))
 
 
 def valid_sas_file(filepath: str) -> str:
