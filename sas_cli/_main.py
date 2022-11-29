@@ -31,7 +31,7 @@ def load_config(args: argparse.Namespace) -> dict:
     return dict(config.items("DEFAULT"))
 
 
-def valid_sas_file(filepath: str) -> bool:
+def valid_sas_file(filepath: str) -> str:
     try:
         open(filepath)
     except (FileNotFoundError, OSError) as e:
@@ -42,11 +42,10 @@ def valid_sas_file(filepath: str) -> bool:
         raise argparse.ArgumentTypeError(
             f"The file '{filepath}' is not a valid .sas file"
         )
-    return True
+    return filepath
 
 
 def run_program(args: argparse.Namespace) -> int:
-
     with open(args.program_path) as f:
         program_code = f.read()
 
@@ -74,14 +73,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="FILE",
         help="the path to the SAS (.sas) program you wish to run",
         type=valid_sas_file,
+        # nargs="*",
     )
-    run_parser.add_argument("--show-log", dest="show_log", action="store_true")
+    run_parser.add_argument("-l", "--show-log", dest="show_log", action="store_true")
 
     ret = 0
     args = parser.parse_args(argv)
 
     # config = load_config(args)
-
     if args.command == "run":
         ret = run_program(args)
 
