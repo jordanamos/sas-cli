@@ -9,7 +9,6 @@ import pandas as pd
 from saspy import SASsession
 
 CONFIG_FILE = "config.ini"
-SAS_CONFIG_PERSONAL = os.path.join(os.getcwd(), "_sas_cfg_personal.py")
 
 
 def load_config(args: argparse.Namespace) -> dict:
@@ -53,7 +52,7 @@ def run_program(args: argparse.Namespace) -> int:
     with open(args.program_path) as f:
         program_code = f.read()
 
-    with SASsession(cfgfile=SAS_CONFIG_PERSONAL) as sas:
+    with SASsession() as sas:
         print(f"Running program: {args.program_path}\n")
         result = sas.submit(program_code)
         sys_err = sas.SYSERR()
@@ -77,7 +76,7 @@ def run_program(args: argparse.Namespace) -> int:
 
 
 def list_lib(args: argparse.Namespace) -> int:
-    with SASsession(cfgfile=SAS_CONFIG_PERSONAL) as sas:
+    with SASsession() as sas:
         list_of_tables = sas.list_tables(args.libref, results="pandas")
         if list_of_tables is not None:
             print(list_of_tables)
@@ -85,12 +84,16 @@ def list_lib(args: argparse.Namespace) -> int:
 
 
 def list_datasets(args: argparse.Namespace) -> int:
-    with SASsession(cfgfile=SAS_CONFIG_PERSONAL) as sas:
+    with SASsession() as sas:
         try:
             if args.info:
                 print(sas.sasdata(table=args.dataset, libref=args.libref).columnInfo())
             else:
-                options = {"where": """""", "obs": args.obs, "keep": args.keep}
+                options = {
+                    "where": """""",
+                    "obs": args.obs,
+                    "keep": args.keep,
+                }
                 df = sas.sd2df(table=args.dataset, libref=args.libref, dsopts=options)
                 print(df)
         except (FileNotFoundError, ValueError) as e:
