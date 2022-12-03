@@ -7,9 +7,9 @@ from saspy import SASsession
 
 def valid_sas_file(filepath: str) -> str:
     try:
-        open(filepath)
-        # TODO confirm both exceptions are thrown by open
-    except (FileNotFoundError, OSError) as e:
+        with open(filepath) as tmp:
+            pass
+    except (OSError) as e:
         message = f"Can't open '{filepath}': {e}"
         raise argparse.ArgumentTypeError(message)
 
