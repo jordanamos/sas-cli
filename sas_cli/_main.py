@@ -91,7 +91,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         type=valid_sas_file,
         # nargs="*",
     )
-    run_parser.add_argument("-log", "--show-log", dest="show_log", action="store_true")
+    run_parser.add_argument(
+        "-log",
+        "--show-log",
+        dest="show_log",
+        action="store_true",
+        help="displays the SAS log once the program has finished executing",
+    )
 
     dataset_parser = subparsers.add_parser(
         "data", description="Describe or print sample data from a SAS dataset"
@@ -113,25 +119,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--obs",
         metavar="",
         type=int,
-        help="specify the amount of output observations (default is %(default)s)",
+        help="specify the number of output observations (default is %(default)s)",
         default=10,
     )
     dataset_parser.add_argument(
         "-k",
         "--keep",
         metavar="",
-        help="specify the columns to keep in the output in a quoted space separated string eg. 'column_1 column_2'",
+        help="specify the columns to keep in the output. Multiple columns can be specified in a quoted space separated string eg. 'column_1 column_2'",
         default="",
     )
     dataset_parser.add_argument(
         "-i",
         "--info",
-        help="display info about a SAS dataset, or if no dataset provided a SAS library",
+        help="displays info about a SAS dataset rather than data",
         action="store_true",
     )
 
     lib_parser = subparsers.add_parser(
-        "lib", description="List the datasets in a SAS library"
+        "lib", description="List the members of a SAS library"
     )
     lib_parser.add_argument(
         "libref",
@@ -142,7 +148,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     ret = 0
     args = parser.parse_args(argv)
 
-    # config = load_config(args)
     if args.command == "run":
         ret = run_program(args)
     elif args.command == "data":
