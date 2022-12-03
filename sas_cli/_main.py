@@ -1,10 +1,7 @@
 import argparse
-import configparser
 import sys
-from pathlib import Path
 from typing import Sequence
 
-import pandas as pd
 from saspy import SASsession
 
 
@@ -23,7 +20,10 @@ def valid_sas_file(filepath: str) -> str:
     return filepath
 
 
-def run_program(args: argparse.Namespace) -> int:
+def run_sas_program(args: argparse.Namespace) -> int:
+    """
+    Runs a SAS program file
+    """
     with open(args.program_path) as f:
         program_code = f.read()
 
@@ -43,14 +43,16 @@ def run_program(args: argparse.Namespace) -> int:
             print(result["LOG"])
         return 1
 
-    # print(result)
     if args.show_log:
         print(result["LOG"])
 
     return 0
 
 
-def list_lib(args: argparse.Namespace) -> int:
+def get_sas_lib(args: argparse.Namespace) -> int:
+    """
+    List the members or datasets within a SAS library
+    """
     with SASsession() as sas:
         list_of_tables = sas.list_tables(args.libref, results="pandas")
         if list_of_tables is not None:
@@ -58,7 +60,12 @@ def list_lib(args: argparse.Namespace) -> int:
     return 0
 
 
-def list_datasets(args: argparse.Namespace) -> int:
+def get_sas_data(args: argparse.Namespace) -> int:
+    """
+    Get sample data from a SAS dataset
+    or if the -i flag is set, lists the variables of the SAS dataset
+    (PROC DATASETS)
+    """
     with SASsession() as sas:
         try:
             if args.info:
@@ -71,7 +78,7 @@ def list_datasets(args: argparse.Namespace) -> int:
                 }
                 df = sas.sd2df(table=args.dataset, libref=args.libref, dsopts=options)
                 print(df)
-        except (FileNotFoundError, ValueError) as e:
+        except (FileNotFoundError, ValueError):
             return 1
     return 0
 
@@ -83,6 +90,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     subparsers = parser.add_subparsers(dest="command")
 
+    # run parser
     run_parser = subparsers.add_parser("run", description="Run a SAS program file")
     run_parser.add_argument(
         "program_path",
@@ -99,6 +107,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="displays the SAS log once the program has finished executing",
     )
 
+    # data parser
     dataset_parser = subparsers.add_parser(
         "data", description="Describe or print sample data from a SAS dataset"
     )
@@ -126,7 +135,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         "-k",
         "--keep",
         metavar="",
-        help="specify the columns to keep in the output. Multiple columns can be specified in a quoted space separated string eg. 'column_1 column_2'",
+        help="specify the columns to keep in the output."
+        "Multiple columns can be specified in a quoted space separated string eg. 'column_1 column_2'",
         default="",
     )
     dataset_parser.add_argument(
@@ -136,6 +146,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
     )
 
+    # lib parser
     lib_parser = subparsers.add_parser(
         "lib", description="List the members of a SAS library"
     )
@@ -149,11 +160,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.command == "run":
-        ret = run_program(args)
+        ret = run_sas_program(args)
     elif args.command == "data":
-        ret = list_datasets(args)
+        ret = get_sas_data(args)
     elif args.command == "lib":
-        ret = list_lib(args)
+        ret = get_sas_lib(args)
 
     return ret
 
