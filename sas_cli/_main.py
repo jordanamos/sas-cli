@@ -24,28 +24,36 @@ def run_sas_program(args: argparse.Namespace) -> int:
     """
     Runs a SAS program file
     """
-    with open(args.program_path) as f:
-        program_code = f.read()
+    try:
+        with open(args.program_path) as f:
+            program_code = f.read()
 
-    with SASsession() as sas:
-        print(f"Running program: {args.program_path}\n")
-        result = sas.submit(program_code)
-        sys_err = sas.SYSERR()
-        sys_err_text = sas.SYSERRORTEXT()
+        with SASsession() as sas:
+            print(f"Running program: {args.program_path}\n")
+            result = sas.submit(
+                program_code
+            )  # returns a dict with 2 keys: 'LOG' and 'LST'
+            sas_output = result["LST"]
+            sas_log = result["LOG"]
+            sys_err = sas.SYSERR()
+            sys_err_text = sas.SYSERRORTEXT()
 
-    if sys_err_text:
-        message = (
-            f"An error has occured during program execution: {sys_err}: {sys_err_text}"
-        )
-        print(message, file=sys.stderr)
-        show_log = input("Do you wish to view the log before exiting? [y]es / [n]o:")
-        if show_log.lower() in ["y", "yes", "si"]:
-            print(result["LOG"])
-        return 1
+        if sys_err_text or sys_err > 0:
+            message = f"An error has occured during program execution: {sys_err}: {sys_err_text}"
+            print(message, file=sys.stderr)
+            show_log = input(
+                "Do you wish to view the log before exiting? [y]es / [n]o:"
+            )
+            if show_log.lower() in ["y", "yes", "si"]:
+                print(sas_log)
+            return 1
 
-    if args.show_log:
-        print(result["LOG"])
+        if args.show_log:
+            print(sas_log)
 
+        print(f"Output:\n{sas_output}")
+    except OSError as e:
+        print(f"TEST ME: {e}")
     return 0
 
 
@@ -108,22 +116,22 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     # data parser
-    dataset_parser = subparsers.add_parser(
+    data_parser = subparsers.add_parser(
         "data", description="Describe or print sample data from a SAS dataset"
     )
-    dataset_parser.add_argument(
+    data_parser.add_argument(
         "dataset",
         metavar="DATASET",
         help="specify the SAS dataset/table name",
     )
-    dataset_parser.add_argument(
+    data_parser.add_argument(
         "-l",
         "--libref",
         metavar="",
         help="specify the SAS internal libref (default is %(default)s)",
         default="WORK",
     )
-    dataset_parser.add_argument(
+    data_parser.add_argument(
         "-o",
         "--obs",
         metavar="",
@@ -131,7 +139,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="specify the number of output observations (default is %(default)s)",
         default=10,
     )
-    dataset_parser.add_argument(
+    data_parser.add_argument(
         "-k",
         "--keep",
         metavar="",
@@ -139,7 +147,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "Multiple columns can be specified in a quoted space separated string eg. 'column_1 column_2'",
         default="",
     )
-    dataset_parser.add_argument(
+    data_parser.add_argument(
         "-i",
         "--info",
         help="displays info about a SAS dataset rather than data",
