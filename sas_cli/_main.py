@@ -86,7 +86,10 @@ def run_sas_program(args: argparse.Namespace) -> int:
         SASIONotSupportedError,
         AttributeError,
     ) as e:
-        print(f"\nSaspy configuration error: {e}", file=sys.stderr)
+        print(
+            f"\nSaspy configuration error: {e}",
+            file=sys.stderr,
+        )
         return 1
 
     return 0
