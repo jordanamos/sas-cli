@@ -7,7 +7,7 @@ from saspy import SASsession
 
 def valid_sas_file(filepath: str) -> str:
     try:
-        with open(filepath) as tmp:
+        with open(filepath):
             pass
     except (OSError) as e:
         message = f"Can't open '{filepath}': {e}"
@@ -53,7 +53,8 @@ def run_sas_program(args: argparse.Namespace) -> int:
 
         print(f"Output:\n{sas_output}")
     except OSError as e:
-        print(f"TEST ME: {e}")
+        print(e)
+        raise
     return 0
 
 
@@ -62,7 +63,10 @@ def get_sas_lib(args: argparse.Namespace) -> int:
     List the members or datasets within a SAS library
     """
     with SASsession() as sas:
-        list_of_tables = sas.list_tables(args.libref, results="pandas")
+        list_of_tables = sas.list_tables(
+            args.libref,
+            results="pandas",
+        )
         if list_of_tables is not None:
             print(list_of_tables)
     return 0
@@ -77,14 +81,23 @@ def get_sas_data(args: argparse.Namespace) -> int:
     with SASsession() as sas:
         try:
             if args.info:
-                print(sas.sasdata(table=args.dataset, libref=args.libref).columnInfo())
+                print(
+                    sas.sasdata(
+                        table=args.dataset,
+                        libref=args.libref,
+                    ).columnInfo(),
+                )
             else:
                 options = {
                     "where": """""",
                     "obs": args.obs,
                     "keep": args.keep,
                 }
-                df = sas.sd2df(table=args.dataset, libref=args.libref, dsopts=options)
+                df = sas.sd2df(
+                    table=args.dataset,
+                    libref=args.libref,
+                    dsopts=options,
+                )
                 print(df)
         except (FileNotFoundError, ValueError):
             return 1
@@ -96,10 +109,15 @@ def main(argv: Sequence[str] | None = None) -> int:
         description="A command line interface to SAS",
     )
 
-    subparsers = parser.add_subparsers(dest="command")
+    subparsers = parser.add_subparsers(
+        dest="command",
+    )
 
     # run parser
-    run_parser = subparsers.add_parser("run", description="Run a SAS program file")
+    run_parser = subparsers.add_parser(
+        "run",
+        description="Run a SAS program file",
+    )
     run_parser.add_argument(
         "program_path",
         metavar="FILE",
@@ -117,7 +135,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     # data parser
     data_parser = subparsers.add_parser(
-        "data", description="Describe or print sample data from a SAS dataset"
+        "data",
+        description="Describe or print sample data from a SAS dataset",
     )
     data_parser.add_argument(
         "dataset",

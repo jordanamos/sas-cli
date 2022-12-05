@@ -1,5 +1,4 @@
 import argparse
-import os
 import tempfile
 from unittest import mock
 
@@ -72,5 +71,13 @@ def test_run_program(temp_sas_file, show_log):
             submit=tst_submit,
             SYSERR=SYSERR,
             SYSERRORTEXT=SYSERRORTEXT,
-        ) as tst_sas:
+        ):
             assert run_sas_program(args) == 0
+
+
+def test_run_program_error(temp_file):
+    args = argparse.Namespace()
+    args.command = "run"
+    args.program_path = "sda"
+    with pytest.raises(OSError):
+        run_sas_program(args)
