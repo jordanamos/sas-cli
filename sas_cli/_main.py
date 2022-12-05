@@ -3,6 +3,12 @@ import sys
 from typing import Sequence
 
 from saspy import SASsession
+from saspy.sasexceptions import (
+    SASConfigNotFoundError,
+    SASConfigNotValidError,
+    SASIOConnectionError,
+    SASIONotSupportedError,
+)
 
 
 def valid_sas_file(filepath: str) -> str:
@@ -38,23 +44,51 @@ def run_sas_program(args: argparse.Namespace) -> int:
             sys_err = sas.SYSERR()
             sys_err_text = sas.SYSERRORTEXT()
 
-        if sys_err_text or sys_err > 0:
-            message = f"An error has occured during program execution: {sys_err}: {sys_err_text}"
-            print(message, file=sys.stderr)
+        if sys_err_text or sys_err > 6:
+            message = f"{sys_err}: {sys_err_text}"
+
             show_log = input(
                 "Do you wish to view the log before exiting? [y]es / [n]o:"
             )
             if show_log.lower() in ["y", "yes", "si"]:
                 print(sas_log)
-            return 1
+            raise RuntimeError(message)
 
         if args.show_log:
             print(sas_log)
 
-        print(f"Output:\n{sas_output}")
+        print(f"\nOutput:\n{sas_output}")
+    # runtime error
+    except RuntimeError as e:
+        print(
+            f"\nAn error occured while running '{args.program_path}': {e}",
+            file=sys.stderr,
+        )
+        return 1
+    # connection error
+    except SASIOConnectionError as e:
+        print(
+            f"\nUnable to connect to SAS: {e}",
+            file=sys.stderr,
+        )
+        return 1
+    # cant open file error
     except OSError as e:
-        print(e)
-        raise
+        print(
+            f"\nCan't open '{args.program_path}': {e}",
+            file=sys.stderr,
+        )
+        return 1
+    # saspy config errors
+    except (
+        SASConfigNotValidError,
+        SASConfigNotFoundError,
+        SASIONotSupportedError,
+        AttributeError,
+    ) as e:
+        print(f"\nSaspy configuration error: {e}", file=sys.stderr)
+        return 1
+
     return 0
 
 
