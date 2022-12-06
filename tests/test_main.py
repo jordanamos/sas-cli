@@ -12,15 +12,13 @@ from sas_cli._main import main, run_sas_program, valid_sas_file
 # fixtures
 @pytest.fixture()
 def temp_sas_file():
-    with tempfile.NamedTemporaryFile(
-        mode="r", suffix=".sas", dir="./testing"
-    ) as temp_file:
+    with tempfile.NamedTemporaryFile(mode="r", suffix=".sas") as temp_file:
         yield temp_file
 
 
 @pytest.fixture()
 def temp_file():
-    with tempfile.NamedTemporaryFile(mode="r", dir="./testing") as temp_file:
+    with tempfile.NamedTemporaryFile(mode="r") as temp_file:
         yield temp_file
 
 

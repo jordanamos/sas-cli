@@ -1,4 +1,5 @@
 import argparse
+import logging
 import sys
 from typing import Sequence
 
@@ -9,6 +10,8 @@ from saspy.sasexceptions import (
     SASIOConnectionError,
     SASIONotSupportedError,
 )
+
+MAX_OUTPUT_OBS = 10000
 
 
 def valid_sas_file(filepath: str) -> str:
@@ -24,6 +27,28 @@ def valid_sas_file(filepath: str) -> str:
             f"The file '{filepath}' is not a valid .sas file"
         )
     return filepath
+
+
+def get_sas_session():
+    try:
+        return SASsession()
+    # connection error
+    except SASIOConnectionError as e:
+        message = f"\nUnable to connect to SAS, check your connection: {e}"
+        raise SASIOConnectionError(message)
+    except RuntimeError as e:
+        message = f"\nAn error occured during runtime: {e}"
+        raise RuntimeError(message)
+    # config errors
+    except (
+        SASConfigNotValidError,
+        SASConfigNotFoundError,
+        SASIONotSupportedError,
+        AttributeError,
+    ) as e:
+        message = f"\nSaspy configuration error. Configuration file not found or is not valid: {e}"
+        print(message, file=sys.stderr)
+        raise SASConfigNotValidError(message)
 
 
 def run_sas_program(args: argparse.Namespace) -> int:
@@ -91,7 +116,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 1
-
     return 0
 
 
@@ -115,20 +139,21 @@ def get_sas_data(args: argparse.Namespace) -> int:
     or if the -i flag is set, lists the variables of the SAS dataset
     (PROC DATASETS)
     """
-    with SASsession() as sas:
-        try:
-            if args.info:
-                print(
-                    sas.sasdata(
-                        table=args.dataset,
-                        libref=args.libref,
-                    ).columnInfo(),
+    try:
+        with get_sas_session() as sas:
+            if args.info_only:
+                data = sas.sasdata(
+                    table=args.dataset,
+                    libref=args.libref,
                 )
+                if data:
+                    print(data.columnInfo())
             else:
                 options = {
-                    "where": """""",
+                    "where": args.where,
                     "obs": args.obs,
                     "keep": args.keep,
+                    "drop": args.drop,
                 }
                 df = sas.sd2df(
                     table=args.dataset,
@@ -136,9 +161,16 @@ def get_sas_data(args: argparse.Namespace) -> int:
                     dsopts=options,
                 )
                 print(df)
-        except (FileNotFoundError, ValueError):
-            return 1
-    return 0
+    except (
+        SASIOConnectionError,
+        SASConfigNotValidError,
+        FileNotFoundError,
+        ValueError,
+        RuntimeError,
+    ) as e:
+        return 1
+    else:
+        return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -160,10 +192,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="FILE",
         help="specify the path to the SAS (.sas) program you wish to run",
         type=valid_sas_file,
-        # nargs="*",
     )
     run_parser.add_argument(
-        "-log",
         "--show-log",
         dest="show_log",
         action="store_true",
@@ -181,32 +211,41 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="specify the SAS dataset/table name",
     )
     data_parser.add_argument(
-        "-l",
+        "-lib",
         "--libref",
         metavar="",
         help="specify the SAS internal libref (default is %(default)s)",
         default="WORK",
     )
     data_parser.add_argument(
-        "-o",
         "--obs",
         metavar="",
         type=int,
-        help="specify the number of output observations (default is %(default)s)",
+        help="specify the number of output observations between 0 and {MAX_OUTPUT_OBS:,} (default is %(default)s). ",
         default=10,
     )
     data_parser.add_argument(
-        "-k",
         "--keep",
         metavar="",
-        help="specify the columns to keep in the output."
-        "Multiple columns can be specified in a quoted space separated string eg. 'column_1 column_2'",
+        help="specify a string containing the columns to keep in the output eg. 'column_1 column_2'",
+        default="",
+    )
+    data_parser.add_argument(
+        "--drop",
+        metavar="",
+        help="specify a string containing the columns to drop in the output eg. 'column_1 column_2'",
+        default="",
+    )
+    data_parser.add_argument(
+        "--where",
+        metavar="",
+        help="specify a string containing where clause conditions eg. \"financial_year = '2021-22'\"",
         default="",
     )
     data_parser.add_argument(
         "-i",
-        "--info",
-        help="displays info about a SAS dataset rather than data",
+        "--info-only",
+        help="displays information about a SAS dataset rather than data",
         action="store_true",
     )
 
@@ -226,6 +265,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "run":
         ret = run_sas_program(args)
     elif args.command == "data":
+        if args.obs > MAX_OUTPUT_OBS:
+            print(
+                f"Option obs '{args.obs:,}' is too large and has been set to {MAX_OUTPUT_OBS:,}."
+            )
+            args.obs = MAX_OUTPUT_OBS
         ret = get_sas_data(args)
     elif args.command == "lib":
         ret = get_sas_lib(args)
