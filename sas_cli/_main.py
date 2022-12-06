@@ -29,17 +29,15 @@ def valid_sas_file(filepath: str) -> str:
     return filepath
 
 
-def get_sas_session():
+def get_sas_session() -> SASsession:
     try:
         return SASsession()
-    # connection error
     except SASIOConnectionError as e:
         message = f"\nUnable to connect to SAS, check your connection: {e}"
         raise SASIOConnectionError(message)
     except RuntimeError as e:
         message = f"\nAn error occured during runtime: {e}"
         raise RuntimeError(message)
-    # config errors
     except (
         SASConfigNotValidError,
         SASConfigNotFoundError,
