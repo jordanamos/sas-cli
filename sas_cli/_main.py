@@ -1,5 +1,4 @@
 import argparse
-import logging
 import sys
 from typing import Sequence
 
@@ -167,8 +166,7 @@ def get_sas_data(args: argparse.Namespace) -> int:
         RuntimeError,
     ) as e:
         return 1
-    else:
-        return 0
+    return 0
 
 
 def main(argv: Sequence[str] | None = None) -> int:

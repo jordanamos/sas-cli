@@ -1,24 +1,23 @@
 import argparse
-import tempfile
 from io import StringIO
 from unittest import mock
 
 import pytest
 
-import sas_cli._main
-from sas_cli._main import main, run_sas_program, valid_sas_file
-
-
-# fixtures
-@pytest.fixture()
-def temp_sas_file():
-    with tempfile.NamedTemporaryFile(mode="r", suffix=".sas") as temp_file:
-        yield temp_file
+from sas_cli import _main
 
 
 @pytest.fixture()
-def temp_file():
-    with tempfile.NamedTemporaryFile(mode="r") as temp_file:
+def temp_sas_file(tmp_path):
+    f = tmp_path / "f.sas"
+    with open(f, "w") as temp_sas_file:
+        yield temp_sas_file
+
+
+@pytest.fixture()
+def temp_file(tmp_path):
+    f = tmp_path / "f.txt"
+    with open(f, "w") as temp_file:
         yield temp_file
 
 
@@ -27,36 +26,41 @@ def mock_sas_session(monkeypatch, request):
     def mock_init(self):
         self._io = None
 
-    monkeypatch.setattr(sas_cli._main.SASsession, "__init__", mock_init)
+    monkeypatch.setattr(_main.SASsession, "__init__", mock_init)
     monkeypatch.setattr(
-        sas_cli._main.SASsession,
+        _main.SASsession,
         "submit",
         lambda self, code: {"LOG": "", "LST": ""},
     )
     monkeypatch.setattr(
-        sas_cli._main.SASsession,
+        _main.SASsession,
         "SYSERR",
-        lambda s: 0,
+        lambda _: 0,
     )
     monkeypatch.setattr(
-        sas_cli._main.SASsession,
+        _main.SASsession,
         "SYSERRORTEXT",
-        lambda s: "",
+        lambda _: "",
     )
 
 
 # tests
 def test_main_trivial():
-    assert main(()) == 0
+    assert _main.main(()) == 0
 
 
 def test_valid_sas_file(temp_sas_file):
-    assert valid_sas_file(temp_sas_file.name) == temp_sas_file.name
+    assert _main.valid_sas_file(temp_sas_file.name) == temp_sas_file.name
 
 
 def test_valid_sas_file_error(temp_file):
     with pytest.raises(argparse.ArgumentTypeError):
-        valid_sas_file(temp_file.name)
+        _main.valid_sas_file(temp_file.name)
+
+
+@mock.patch("sas_cli._main.SASsession.__init__", return_value=None)
+def test_get_sas_session(mock_session):
+    assert isinstance(_main.get_sas_session(), _main.SASsession)
 
 
 @pytest.mark.parametrize(
@@ -67,7 +71,6 @@ def test_valid_sas_file_error(temp_file):
     ),
 )
 def test_run_program(
-    monkeypatch,
     mock_sas_session,
     temp_sas_file,
     show_log,
@@ -79,14 +82,14 @@ def test_run_program(
     program_code = mock.mock_open(read_data="%PUT hello world;")
 
     with mock.patch("builtins.open", program_code):
-        assert run_sas_program(args) == 0
+        assert _main.run_sas_program(args) == 0
 
 
 def test_run_program_open_file_error():
     args = argparse.Namespace()
     args.command = "run"
     args.program_path = "non/existent/file/path.sas"
-    assert run_sas_program(args) == 1
+    assert _main.run_sas_program(args) == 1
 
 
 @pytest.mark.parametrize(
@@ -114,17 +117,17 @@ def test_run_program_sas_error(
 
     with mock.patch("builtins.open", program_code):
         monkeypatch.setattr(
-            sas_cli._main.SASsession,
+            _main.SASsession,
             "SYSERR",
-            lambda s: sys_err,
+            lambda _: sys_err,
         )
         monkeypatch.setattr(
-            sas_cli._main.SASsession,
+            _main.SASsession,
             "SYSERRORTEXT",
-            lambda s: sys_err_text,
+            lambda _: sys_err_text,
         )
         monkeypatch.setattr("sys.stdin", StringIO("yes"))
-        assert run_sas_program(args) > 0
+        assert _main.run_sas_program(args) > 0
         out, err = capsys.readouterr()
         assert (
             err
