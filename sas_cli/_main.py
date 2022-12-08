@@ -1,5 +1,6 @@
 import argparse
 import sys
+import time
 from typing import Sequence
 
 from saspy import SASsession
@@ -56,11 +57,11 @@ def run_sas_program(args: argparse.Namespace) -> int:
         with open(args.program_path) as f:
             program_code = f.read()
 
-        with SASsession() as sas:
-            print(f"Running program: {args.program_path}\n")
-            result = sas.submit(
-                program_code
-            )  # returns a dict with 2 keys: 'LOG' and 'LST'
+        with get_sas_session() as sas:
+            print(
+                f"Running program: {args.program_path} at {time.strftime('%H:%M:%S')}\n"
+            )
+            result = sas.submit(program_code)
             sas_output = result["LST"]
             sas_log = result["LOG"]
             sys_err = sas.SYSERR()
@@ -80,14 +81,12 @@ def run_sas_program(args: argparse.Namespace) -> int:
             print(sas_log)
 
         print(f"\nOutput:\n{sas_output}")
-    # runtime error
     except RuntimeError as e:
         print(
             f"\nAn error occured while running '{args.program_path}': {e}",
             file=sys.stderr,
         )
         return 1
-    # connection error
     except SASIOConnectionError as e:
         print(
             f"\nUnable to connect to SAS: {e}",
@@ -98,18 +97,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
     except OSError as e:
         print(
             f"\nCan't open '{args.program_path}': {e}",
-            file=sys.stderr,
-        )
-        return 1
-    # saspy config errors
-    except (
-        SASConfigNotValidError,
-        SASConfigNotFoundError,
-        SASIONotSupportedError,
-        AttributeError,
-    ) as e:
-        print(
-            f"\nSaspy configuration error: {e}",
             file=sys.stderr,
         )
         return 1

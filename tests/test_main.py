@@ -11,6 +11,7 @@ from sas_cli import _main
 def temp_sas_file(tmp_path):
     f = tmp_path / "f.sas"
     with open(f, "w") as temp_sas_file:
+        temp_sas_file.write("%PUT hello world;")
         yield temp_sas_file
 
 
@@ -21,35 +22,13 @@ def temp_file(tmp_path):
         yield temp_file
 
 
-@pytest.fixture()
-def mock_sas_session(monkeypatch, request):
-    def mock_init(self):
-        self._io = None
-
-    monkeypatch.setattr(_main.SASsession, "__init__", mock_init)
-    monkeypatch.setattr(
-        _main.SASsession,
-        "submit",
-        lambda self, code: {"LOG": "", "LST": ""},
-    )
-    monkeypatch.setattr(
-        _main.SASsession,
-        "SYSERR",
-        lambda _: 0,
-    )
-    monkeypatch.setattr(
-        _main.SASsession,
-        "SYSERRORTEXT",
-        lambda _: "",
-    )
-
-
 # tests
 def test_main_trivial():
     assert _main.main(()) == 0
 
 
 def test_valid_sas_file(temp_sas_file):
+    print(temp_sas_file.name)
     assert _main.valid_sas_file(temp_sas_file.name) == temp_sas_file.name
 
 
@@ -70,8 +49,9 @@ def test_get_sas_session(mock_session):
         pytest.param(False, id="hide log"),
     ),
 )
+@mock.patch("sas_cli._main.SASsession")
 def test_run_program(
-    mock_sas_session,
+    MockSASsession,
     temp_sas_file,
     show_log,
 ):
@@ -80,15 +60,27 @@ def test_run_program(
     args.program_path = temp_sas_file.name
     args.show_log = show_log
     program_code = mock.mock_open(read_data="%PUT hello world;")
-
+    MockSASsession.return_value.__enter__.return_value.submit = mock.Mock(
+        return_value={
+            "LOG": "",
+            "LST": "",
+        },
+    )
+    MockSASsession.return_value.__enter__.return_value.SYSERR = mock.Mock(
+        return_value=0,
+    )
+    MockSASsession.return_value.__enter__.return_value.SYSERRORTEXT = mock.Mock(
+        return_value="",
+    )
     with mock.patch("builtins.open", program_code):
         assert _main.run_sas_program(args) == 0
 
 
-def test_run_program_open_file_error():
+def test_run_program_open_file_error(tmp_path):
+    f = tmp_path / "f.sas"
     args = argparse.Namespace()
     args.command = "run"
-    args.program_path = "non/existent/file/path.sas"
+    args.program_path = f.name
     assert _main.run_sas_program(args) == 1
 
 
@@ -101,11 +93,12 @@ def test_run_program_open_file_error():
         ),
     ),
 )
+@mock.patch("sas_cli._main.SASsession")
 def test_run_program_sas_error(
+    MockSASsession,
     monkeypatch,
-    capsys,
-    mock_sas_session,
     temp_sas_file,
+    capsys,
     sys_err,
     sys_err_text,
 ):
@@ -113,19 +106,20 @@ def test_run_program_sas_error(
     args.command = "run"
     args.program_path = temp_sas_file.name
     args.show_log = False
-    program_code = mock.mock_open(read_data="%PUT basic sas code without semi-colon")
-
+    MockSASsession.return_value.__enter__.return_value.submit = mock.Mock(
+        return_value={
+            "LOG": "",
+            "LST": "",
+        },
+    )
+    MockSASsession.return_value.__enter__.return_value.SYSERR = mock.Mock(
+        return_value=sys_err,
+    )
+    MockSASsession.return_value.__enter__.return_value.SYSERRORTEXT = mock.Mock(
+        return_value=sys_err_text,
+    )
+    program_code = mock.mock_open(read_data="")
     with mock.patch("builtins.open", program_code):
-        monkeypatch.setattr(
-            _main.SASsession,
-            "SYSERR",
-            lambda _: sys_err,
-        )
-        monkeypatch.setattr(
-            _main.SASsession,
-            "SYSERRORTEXT",
-            lambda _: sys_err_text,
-        )
         monkeypatch.setattr("sys.stdin", StringIO("yes"))
         assert _main.run_sas_program(args) > 0
         out, err = capsys.readouterr()
