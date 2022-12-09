@@ -1,9 +1,12 @@
 import argparse
+import logging
 import sys
 import time
+import warnings
 from typing import Sequence
 
 from saspy import SASsession
+from saspy import logger as saspy_logger
 from saspy.sasexceptions import (
     SASConfigNotFoundError,
     SASConfigNotValidError,
@@ -31,13 +34,11 @@ def valid_sas_file(filepath: str) -> str:
 
 def get_sas_session() -> SASsession:
     try:
-        return SASsession()
+        return SASsession(nosub=True)
     except SASIOConnectionError as e:
         message = f"\nUnable to connect to SAS, check your connection: {e}"
+        print(e, file=sys.stderr)
         raise SASIOConnectionError(message)
-    except RuntimeError as e:
-        message = f"\nAn error occured during runtime: {e}"
-        raise RuntimeError(message)
     except (
         SASConfigNotValidError,
         SASConfigNotFoundError,
@@ -46,7 +47,7 @@ def get_sas_session() -> SASsession:
     ) as e:
         message = f"\nSaspy configuration error. Configuration file not found or is not valid: {e}"
         print(message, file=sys.stderr)
-        raise SASConfigNotValidError(message)
+        raise
 
 
 def run_sas_program(args: argparse.Namespace) -> int:
@@ -107,7 +108,7 @@ def get_sas_lib(args: argparse.Namespace) -> int:
     """
     List the members or datasets within a SAS library
     """
-    with SASsession() as sas:
+    with get_sas_session() as sas:
         list_of_tables = sas.list_tables(
             args.libref,
             results="pandas",
@@ -120,37 +121,35 @@ def get_sas_lib(args: argparse.Namespace) -> int:
 def get_sas_data(args: argparse.Namespace) -> int:
     """
     Get sample data from a SAS dataset
-    or if the -i flag is set, lists the variables of the SAS dataset
     (PROC DATASETS)
     """
     try:
         with get_sas_session() as sas:
-            if args.info_only:
-                data = sas.sasdata(
-                    table=args.dataset,
-                    libref=args.libref,
-                )
-                if data:
-                    print(data.columnInfo())
-            else:
-                options = {
+            data = sas.sasdata(
+                table=args.dataset,
+                libref=args.libref,
+                dsopts={
                     "where": args.where,
                     "obs": args.obs,
                     "keep": args.keep,
                     "drop": args.drop,
-                }
-                df = sas.sd2df(
-                    table=args.dataset,
-                    libref=args.libref,
-                    dsopts=options,
-                )
-                print(df)
+                },
+                results="PANDAS",
+            )
+            try:
+                # this is used to parse the dsopts and get an exception we can handle rather than a crappy SAS log
+                # that would otherwise be displayed with a direct to_df() call
+                column_info = data.columnInfo()
+                if args.info_only:
+                    print(column_info)
+                else:
+                    print(data.to_df())
+            except ValueError as e:
+                print(e, file=sys.stderr)
+                return 1
     except (
         SASIOConnectionError,
         SASConfigNotValidError,
-        FileNotFoundError,
-        ValueError,
-        RuntimeError,
     ) as e:
         return 1
     return 0
@@ -244,7 +243,8 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ret = 0
     args = parser.parse_args(argv)
-
+    # warnings.filterwarnings("ignore", category=UserWarning)
+    # saspy_logger.setLevel(logging.CRITICAL)
     if args.command == "run":
         ret = run_sas_program(args)
     elif args.command == "data":

@@ -38,7 +38,7 @@ def test_valid_sas_file_error(temp_file):
 
 
 @mock.patch("sas_cli._main.SASsession.__init__", return_value=None)
-def test_get_sas_session(mock_session):
+def test_get_sas_session(MockSASsession):
     assert isinstance(_main.get_sas_session(), _main.SASsession)
 
 
