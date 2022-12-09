@@ -34,18 +34,15 @@ def valid_sas_file(filepath: str) -> str:
 def get_sas_session() -> SASsession:
     try:
         return SASsession()
-    except SASIOConnectionError as e:
-        message = f"\nUnable to connect to SAS, check your connection: {e}"
-        print(e, file=sys.stderr)
-        raise SASIOConnectionError(message)
+    except SASIOConnectionError:
+        raise
     except (
         SASConfigNotValidError,
         SASConfigNotFoundError,
         SASIONotSupportedError,
         AttributeError,
     ) as e:
-        message = f"\nSaspy configuration error. \
-            Configuration file not found or is not valid: {e}"
+        message = f"\nSaspy configuration error. Configuration file not found or is not valid: {e}"
         print(message, file=sys.stderr)
         raise SASConfigNotValidError(message)
 
@@ -60,14 +57,12 @@ def run_sas_program(args: argparse.Namespace) -> int:
 
         with get_sas_session() as sas:
             start_time = time.localtime()
-            sapy_logger.log(
-                logging.INFO,
+            sapy_logger.info(
                 f"Started running program: {args.program_path} at {time.strftime('%H:%M:%S', start_time)}",
             )
             result = sas.submit(program_code)
             end_time = time.localtime()
-            sapy_logger.log(
-                logging.INFO,
+            sapy_logger.info(
                 f"Finished running program: {args.program_path} at {time.strftime('%H:%M:%S', end_time)}\n",
             )
             sas_output = result["LST"]
@@ -210,28 +205,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--obs",
         metavar="",
         type=int,
-        help=f"specify the number of output observations between 0 and {MAX_OUTPUT_OBS:,} \
-            (default is %(default)s). ",
+        help=f"specify the number of output observations \
+            between 0 and {MAX_OUTPUT_OBS:,} (default is %(default)s). ",
         default=10,
     )
     data_parser.add_argument(
         "--keep",
         metavar="",
-        help="specify a string containing the columns to keep in the output \
-            eg. 'column_1 column_2'",
+        help="specify a string containing the columns to \
+            keep in the output eg. 'column_1 column_2'",
         default="",
     )
     data_parser.add_argument(
         "--drop",
         metavar="",
-        help="specify a string containing the columns to drop in the output \
-            eg. 'column_1 column_2'",
+        help="specify a string containing the columns to \
+            drop in the output eg. 'column_1 column_2'",
         default="",
     )
     data_parser.add_argument(
         "--where",
         metavar="",
-        help="specify a string containing where clause conditions eg. \"financial_year = '2021-22'\"",
+        help="specify a string containing where clause conditions \
+            eg. \"financial_year='2021-22'\"",
         default="",
     )
     data_parser.add_argument(
