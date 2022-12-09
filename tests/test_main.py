@@ -116,6 +116,6 @@ def test_run_program_sas_error(
         assert _main.run_sas_program(args) > 0
         out, err = capsys.readouterr()
         assert (
-            err
-            == f"\nAn error occured while running '{args.program_path}': {sys_err}: {sys_err_text}\n"
+            err == f"\nAn error occured while running '{args.program_path}': "
+            f"{sys_err}: {sys_err_text}\n"
         )
