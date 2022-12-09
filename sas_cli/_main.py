@@ -15,7 +15,6 @@ from saspy.sasexceptions import (
 
 MAX_OUTPUT_OBS = 10000
 
-
 def valid_sas_file(filepath: str) -> str:
     try:
         with open(filepath):
@@ -249,6 +248,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ret = 0
     args = parser.parse_args(argv)
+
     if args.command == "run":
         ret = run_sas_program(args)
     elif args.command == "data":
