@@ -76,14 +76,6 @@ def test_run_program(
         assert _main.run_sas_program(args) == 0
 
 
-def test_run_program_open_file_error(tmp_path):
-    f = tmp_path / "f.sas"
-    args = argparse.Namespace()
-    args.command = "run"
-    args.program_path = f.name
-    assert _main.run_sas_program(args) == 1
-
-
 @pytest.mark.parametrize(
     ("sys_err", "sys_err_text"),
     (

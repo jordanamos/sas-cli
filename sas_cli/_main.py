@@ -2,11 +2,10 @@ import argparse
 import logging
 import sys
 import time
-import warnings
 from typing import Sequence
 
 from saspy import SASsession
-from saspy import logger as saspy_logger
+from saspy import logger as sapy_logger
 from saspy.sasexceptions import (
     SASConfigNotFoundError,
     SASConfigNotValidError,
@@ -34,7 +33,7 @@ def valid_sas_file(filepath: str) -> str:
 
 def get_sas_session() -> SASsession:
     try:
-        return SASsession(nosub=True)
+        return SASsession()
     except SASIOConnectionError as e:
         message = f"\nUnable to connect to SAS, check your connection: {e}"
         print(e, file=sys.stderr)
@@ -45,9 +44,10 @@ def get_sas_session() -> SASsession:
         SASIONotSupportedError,
         AttributeError,
     ) as e:
-        message = f"\nSaspy configuration error. Configuration file not found or is not valid: {e}"
+        message = f"\nSaspy configuration error. \
+            Configuration file not found or is not valid: {e}"
         print(message, file=sys.stderr)
-        raise
+        raise SASConfigNotValidError(message)
 
 
 def run_sas_program(args: argparse.Namespace) -> int:
@@ -59,10 +59,17 @@ def run_sas_program(args: argparse.Namespace) -> int:
             program_code = f.read()
 
         with get_sas_session() as sas:
-            print(
-                f"Running program: {args.program_path} at {time.strftime('%H:%M:%S')}\n"
+            start_time = time.localtime()
+            sapy_logger.log(
+                logging.INFO,
+                f"Started running program: {args.program_path} at {time.strftime('%H:%M:%S', start_time)}",
             )
             result = sas.submit(program_code)
+            end_time = time.localtime()
+            sapy_logger.log(
+                logging.INFO,
+                f"Finished running program: {args.program_path} at {time.strftime('%H:%M:%S', end_time)}\n",
+            )
             sas_output = result["LST"]
             sas_log = result["LOG"]
             sys_err = sas.SYSERR()
@@ -81,25 +88,18 @@ def run_sas_program(args: argparse.Namespace) -> int:
         if args.show_log:
             print(sas_log)
 
-        print(f"\nOutput:\n{sas_output}")
+        if sas_output:
+            print(f"\nOutput:\n{sas_output}")
     except RuntimeError as e:
         print(
             f"\nAn error occured while running '{args.program_path}': {e}",
             file=sys.stderr,
         )
         return 1
-    except SASIOConnectionError as e:
-        print(
-            f"\nUnable to connect to SAS: {e}",
-            file=sys.stderr,
-        )
-        return 1
-    # cant open file error
-    except OSError as e:
-        print(
-            f"\nCan't open '{args.program_path}': {e}",
-            file=sys.stderr,
-        )
+    except (
+        SASIOConnectionError,
+        SASConfigNotValidError,
+    ):
         return 1
     return 0
 
@@ -108,19 +108,26 @@ def get_sas_lib(args: argparse.Namespace) -> int:
     """
     List the members or datasets within a SAS library
     """
-    with get_sas_session() as sas:
-        list_of_tables = sas.list_tables(
-            args.libref,
-            results="pandas",
-        )
-        if list_of_tables is not None:
-            print(list_of_tables)
+    try:
+        with get_sas_session() as sas:
+            list_of_tables = sas.list_tables(
+                args.libref,
+                results="pandas",
+            )
+            if list_of_tables is not None:
+                print(list_of_tables)
+    except (
+        SASIOConnectionError,
+        SASConfigNotValidError,
+    ):
+        return 1
     return 0
 
 
 def get_sas_data(args: argparse.Namespace) -> int:
     """
     Get sample data from a SAS dataset
+    or info about the dataset if the --info-only(-i) flag is set
     (PROC DATASETS)
     """
     try:
@@ -137,8 +144,9 @@ def get_sas_data(args: argparse.Namespace) -> int:
                 results="PANDAS",
             )
             try:
-                # this is used to parse the dsopts and get an exception we can handle rather than a crappy SAS log
-                # that would otherwise be displayed with a direct to_df() call
+                # this is used to parse the dsopts and get an exception we can handle
+                # rather than a crappy SAS log that would otherwise be displayed
+                # with a direct to_df() call
                 column_info = data.columnInfo()
                 if args.info_only:
                     print(column_info)
@@ -150,7 +158,7 @@ def get_sas_data(args: argparse.Namespace) -> int:
     except (
         SASIOConnectionError,
         SASConfigNotValidError,
-    ) as e:
+    ):
         return 1
     return 0
 
@@ -159,7 +167,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="A command line interface to SAS",
     )
-
     subparsers = parser.add_subparsers(
         dest="command",
     )
@@ -203,19 +210,22 @@ def main(argv: Sequence[str] | None = None) -> int:
         "--obs",
         metavar="",
         type=int,
-        help="specify the number of output observations between 0 and {MAX_OUTPUT_OBS:,} (default is %(default)s). ",
+        help=f"specify the number of output observations between 0 and {MAX_OUTPUT_OBS:,} \
+            (default is %(default)s). ",
         default=10,
     )
     data_parser.add_argument(
         "--keep",
         metavar="",
-        help="specify a string containing the columns to keep in the output eg. 'column_1 column_2'",
+        help="specify a string containing the columns to keep in the output \
+            eg. 'column_1 column_2'",
         default="",
     )
     data_parser.add_argument(
         "--drop",
         metavar="",
-        help="specify a string containing the columns to drop in the output eg. 'column_1 column_2'",
+        help="specify a string containing the columns to drop in the output \
+            eg. 'column_1 column_2'",
         default="",
     )
     data_parser.add_argument(
@@ -243,8 +253,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ret = 0
     args = parser.parse_args(argv)
-    # warnings.filterwarnings("ignore", category=UserWarning)
-    # saspy_logger.setLevel(logging.CRITICAL)
     if args.command == "run":
         ret = run_sas_program(args)
     elif args.command == "data":
