@@ -15,6 +15,7 @@ from saspy.sasexceptions import (
 
 MAX_OUTPUT_OBS = 10000
 
+
 def valid_sas_file(filepath: str) -> str:
     try:
         with open(filepath):
