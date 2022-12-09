@@ -41,8 +41,10 @@ def get_sas_session() -> SASsession:
         SASIONotSupportedError,
         AttributeError,
     ) as e:
-        message = f"\nSaspy configuration error. Configuration file \
-            not found or is not valid: {e}"
+        message = (
+            f"\nSaspy configuration error. Configuration file "
+            f"not found or is not valid: {e}"
+        )
         print(message, file=sys.stderr)
         raise SASConfigNotValidError(message)
 
@@ -58,14 +60,14 @@ def run_sas_program(args: argparse.Namespace) -> int:
         with get_sas_session() as sas:
             start_time = time.localtime()
             sapy_logger.info(
-                f"Started running program: {args.program_path} at \
-                    {time.strftime('%H:%M:%S', start_time)}",
+                f"Started running program: {args.program_path} at "
+                f"{time.strftime('%H:%M:%S', start_time)}",
             )
             result = sas.submit(program_code)
             end_time = time.localtime()
             sapy_logger.info(
-                f"Finished running program: {args.program_path} at \
-                    {time.strftime('%H:%M:%S', end_time)}\n",
+                f"Finished running program: {args.program_path} at "
+                f"{time.strftime('%H:%M:%S', end_time)}\n",
             )
             sas_output = result["LST"]
             sas_log = result["LOG"]
@@ -257,8 +259,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif args.command == "data":
         if args.obs > MAX_OUTPUT_OBS:
             print(
-                f"Option obs '{args.obs:,}' is too large and has been \
-                    set to {MAX_OUTPUT_OBS:,}."
+                f"Option obs '{args.obs:,}' is too large and has been "
+                f"set to {MAX_OUTPUT_OBS:,}."
             )
             args.obs = MAX_OUTPUT_OBS
         ret = get_sas_data(args)
