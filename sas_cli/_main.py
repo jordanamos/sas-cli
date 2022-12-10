@@ -169,7 +169,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "-V",
         "--version",
         action="version",
-        version=f'%(prog)s {importlib_metadata.version("sas_cli")}',
+        version=f'sas-cli {importlib_metadata.version("sas_cli")}',
     )
 
     subparsers = parser.add_subparsers(
