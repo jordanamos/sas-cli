@@ -12,6 +12,7 @@ pre-commit = "*"
 [dev-packages]
 pytest = "*"
 tox = "*"
+coverage = "*"
 
 [requires]
 python_version = "3.10"
