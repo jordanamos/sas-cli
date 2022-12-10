@@ -9,3 +9,4 @@ __pycache__/
 # packaging
 build/
 *.egg-info/
+.coverage

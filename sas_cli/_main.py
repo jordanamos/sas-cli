@@ -1,16 +1,15 @@
 import argparse
+import importlib.metadata as importlib_metadata
 import sys
 import time
-from typing import Sequence
+from collections.abc import Sequence
 
-from saspy import SASsession
 from saspy import logger as sapy_logger
-from saspy.sasexceptions import (
-    SASConfigNotFoundError,
-    SASConfigNotValidError,
-    SASIOConnectionError,
-    SASIONotSupportedError,
-)
+from saspy import SASsession
+from saspy.sasexceptions import SASConfigNotFoundError
+from saspy.sasexceptions import SASConfigNotValidError
+from saspy.sasexceptions import SASIOConnectionError
+from saspy.sasexceptions import SASIONotSupportedError
 
 MAX_OUTPUT_OBS = 10000
 
@@ -166,6 +165,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="A command line interface to SAS",
     )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f'sas-cli {importlib_metadata.version("sas_cli")}',
+    )
+
     subparsers = parser.add_subparsers(
         dest="command",
     )
@@ -210,7 +216,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="",
         type=int,
         help=f"specify the number of output observations \
-            between 0 and {MAX_OUTPUT_OBS:,} (default is %(default)s). ",
+            between 0 and {MAX_OUTPUT_OBS:,} (default is %(default)s).",
         default=10,
     )
     data_parser.add_argument(
