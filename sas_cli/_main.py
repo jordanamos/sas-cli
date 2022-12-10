@@ -1,4 +1,5 @@
 import argparse
+import importlib.metadata as importlib_metadata
 import sys
 import time
 from typing import Sequence
@@ -166,6 +167,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="A command line interface to SAS",
     )
+    parser.add_argument(
+        "-V",
+        "--version",
+        action="version",
+        version=f'%(prog)s {importlib_metadata.version("sas_cli")}',
+    )
+
     subparsers = parser.add_subparsers(
         dest="command",
     )
