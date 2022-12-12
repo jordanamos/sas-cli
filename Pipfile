@@ -5,11 +5,10 @@ name = "pypi"
 
 [packages]
 saspy = "*"
-pandas = "*"
 sas-cli = {editable = true, path = "."}
-pre-commit = "*"
 
 [dev-packages]
+pre-commit = "*"
 pytest = "*"
 tox = "*"
 coverage = "*"
