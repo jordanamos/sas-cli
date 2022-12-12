@@ -1,10 +1,15 @@
 import argparse
+import concurrent.futures
 import importlib.metadata as importlib_metadata
+import os
+import pathlib
 import sys
 import time
+from collections.abc import Generator
 from collections.abc import Sequence
+from typing import TextIO
 
-from saspy import logger as sapy_logger
+from saspy import logger as saspy_logger
 from saspy import SASsession
 from saspy.sasexceptions import SASConfigNotFoundError
 from saspy.sasexceptions import SASConfigNotValidError
@@ -58,13 +63,38 @@ def run_sas_program(args: argparse.Namespace) -> int:
 
         with get_sas_session() as sas:
             start_time = time.localtime()
-            sapy_logger.info(
+            saspy_logger.info(
                 f"Started running program: {args.program_path} at "
                 f"{time.strftime('%H:%M:%S', start_time)}",
             )
-            result = sas.submit(program_code)
+            with concurrent.futures.ThreadPoolExecutor() as ex:
+                path = pathlib.Path("/mnt") / "s" / "Jordan" / "logs" / "test-log3.log"
+                print("=" * os.get_terminal_size().columns)
+
+                def get_new_lines(file: TextIO) -> Generator[str, None, None]:
+                    # go to end of file
+                    file.seek(0, 2)
+                    while code_runner.running():
+                        line = file.readline()
+                        if not line:
+                            time.sleep(0.1)
+                            continue
+                        yield line
+
+                with open(path) as log_file:
+                    code_runner = ex.submit(
+                        sas.submit,
+                        code=program_code,
+                        printto=True,
+                    )
+                    loglines = get_new_lines(log_file)
+                    for line in loglines:
+                        print(line, end="")
+
+                result = code_runner.result()
+
             end_time = time.localtime()
-            sapy_logger.info(
+            saspy_logger.info(
                 f"Finished running program: {args.program_path} at "
                 f"{time.strftime('%H:%M:%S', end_time)}\n",
             )
@@ -82,10 +112,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
             if show_log.lower() in ["y", "yes", "si"]:
                 print(sas_log)
             raise RuntimeError(message)
-
-        if args.show_log:
-            print(sas_log)
-
         if sas_output:
             print(f"\nOutput:\n{sas_output}")
     except RuntimeError as e:
