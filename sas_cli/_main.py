@@ -139,18 +139,17 @@ def run_sas_program(args: argparse.Namespace) -> int:
 
             sas_output = result["LST"]
             sas_log = result["LOG"]
-            print(sas_log)
             sys_err = sas.SYSERR()
             sys_err_text = sas.SYSERRORTEXT()
 
         if sys_err_text or sys_err > 6:
             message = f"{sys_err}: {sys_err_text}"
-
-            show_log = input(
-                "Do you wish to view the log before exiting? [y]es / [n]o:"
-            )
-            if show_log.lower() in ["y", "yes", "si"]:
-                print(sas_log)
+            if not args.show_log:
+                show_log = input(
+                    "Do you wish to view the log before exiting? [y]es / [n]o:"
+                )
+                if show_log.lower() in ["y", "yes", "si"]:
+                    print(sas_log)
             raise RuntimeError(message)
         if sas_output:
             print(f"\nOutput:\n{sas_output}")
