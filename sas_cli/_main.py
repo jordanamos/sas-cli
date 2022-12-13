@@ -56,20 +56,29 @@ def get_sas_session() -> SASsession:
         raise SASConfigNotValidError(message)
 
 
-def get_log_file(program_path: pathlib.Path) -> pathlib.Path:
+def get_log_file(args: argparse.Namespace) -> None:
+    """ ""
+    1. Creates a log file in 'logs' directory or reads from config.ini
     """
-    1.  Creates a 'logs' directory in the directory of the program being run
-        if it doesnt exist.
-    2.  Creates a log file in 'logs' directory
-    """
-    log_file_name = (
-        f"{program_path.stem}_{time.strftime('%H%M%S', time.localtime())}.log"
-    )
-    logging_dir = program_path.parent.absolute() / "logs"
-    logging_dir.mkdir(exist_ok=True)
-    logging_file = logging_dir / log_file_name
-    logging_file.touch()
-    return logging_file
+    path = pathlib.Path(args.program_path)
+    log_file_name = f"{path.stem}_{time.strftime('%H%M%S', time.localtime())}.log"
+    if args.sas_logging_directory:
+        # SAS windows server
+        args.sas_logging_directory = str(
+            pathlib.PureWindowsPath(args.sas_logging_directory) / log_file_name
+        )
+        args.logging_mount_point = str(
+            pathlib.Path(args.logging_mount_point) / log_file_name
+        )
+    else:
+        logging_dir = path.parent.absolute() / "logs"
+        logging_dir.mkdir(exist_ok=True)
+        logging_file = logging_dir / log_file_name
+        logging_file.touch()
+        args.sas_logging_directory = str(logging_file)
+        args.logging_mount_point = str(logging_file)
+
+    return None
 
 
 def run_sas_program(args: argparse.Namespace) -> int:
@@ -82,8 +91,12 @@ def run_sas_program(args: argparse.Namespace) -> int:
             number_of_replacements = program_code.count(SAS_CLI_REPLACEMENT_IDENTIFIER)
             if number_of_replacements == 1:
                 if args.show_log:
-                    log_file = get_log_file(pathlib.Path(args.program_path))
-                    replacement_code = f'PROC PRINTTO LOG="{log_file}"; RUN;'
+                    get_log_file(args)
+                    with open(args.logging_mount_point, "w") as f:
+                        print(f"Log file created at: {args.logging_mount_point}")
+                    replacement_code = (
+                        f'PROC PRINTTO LOG="{args.sas_logging_directory}"; RUN;'
+                    )
                     program_code = program_code.replace(
                         SAS_CLI_REPLACEMENT_IDENTIFIER, replacement_code
                     )
@@ -105,9 +118,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
 
                 print("=" * os.get_terminal_size().columns)
                 if args.show_log:
-                    path = (
-                        pathlib.Path("/mnt") / "s" / "Jordan" / "logs" / "test-log4.log"
-                    )
+                    log_file_path = pathlib.Path(args.logging_mount_point)
 
                     def get_new_lines(file: TextIO) -> Generator[str, None, None]:
                         # go to end of file
@@ -119,13 +130,13 @@ def run_sas_program(args: argparse.Namespace) -> int:
                                 continue
                             yield line
 
-                    with open(path) as log_file:  # type: ignore
+                    with open(log_file_path) as log_file:
                         code_runner = ex.submit(
                             sas.submit,
                             code=program_code,
                             printto=True,
                         )
-                        loglines = get_new_lines(log_file)  # type: ignore
+                        loglines = get_new_lines(log_file)
                         for line in loglines:
                             print(line, end="")
 
@@ -139,7 +150,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
             )
 
             sas_output = result["LST"]
-            sas_log = result["LOG"]
             sys_err = sas.SYSERR()
             sys_err_text = sas.SYSERRORTEXT()
 
@@ -150,7 +160,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
                     "Do you wish to view the log before exiting? [y]es / [n]o:"
                 )
                 if show_log.lower() in ["y", "yes", "si"]:
-                    print(sas_log)
+                    print(result["LOG"])
             raise RuntimeError(message)
         if sas_output:
             print(f"\nOutput:\n{sas_output}")
@@ -347,7 +357,6 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ret = 0
     args = parser.parse_args(argv)
-
     if args.command == "run":
         ret = run_sas_program(args)
     elif args.command == "data":
