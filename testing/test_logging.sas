@@ -3,6 +3,5 @@
 
 %let log_name = &jordan_dir\logs\test-log4.log;
 
-{{%sas%}}
-%LET message = Hello silly SAS user, this is just a test;
+%LET message = Hello World;
 %PUT &message.;

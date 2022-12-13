@@ -2,7 +2,6 @@ import argparse
 import concurrent.futures
 import configparser
 import importlib.metadata as importlib_metadata
-import os
 import pathlib
 import sys
 import time
@@ -26,7 +25,7 @@ def valid_sas_file(filepath: str) -> str:
     try:
         with open(filepath):
             pass
-    except (OSError) as e:
+    except OSError as e:
         message = f"Can't open '{filepath}': {e}"
         raise argparse.ArgumentTypeError(message)
 
@@ -56,29 +55,35 @@ def get_sas_session() -> SASsession:
         raise SASConfigNotValidError(message)
 
 
-def get_log_file(args: argparse.Namespace) -> None:
-    """ ""
-    1. Creates a log file in 'logs' directory or reads from config.ini
+def setup_logging(args: argparse.Namespace) -> tuple[str, str]:
+    """
+    Uses the config settings set in config.ini:
+        - sas_logging_directory
+        - logging_mount_point
+
+    if both are not set, creates a 'logs' directory in the parent folder of the program
+    Returns a tuple (2):
+        index 0 = the path to the SAS log to be used by SAS program
+        index 1 = the local mount point to that same directory
     """
     path = pathlib.Path(args.program_path)
     log_file_name = f"{path.stem}_{time.strftime('%H%M%S', time.localtime())}.log"
-    if args.sas_logging_directory:
+
+    if args.sas_logging_directory and args.logging_mount_point:
         # SAS windows server
-        args.sas_logging_directory = str(
+        logging_file = str(
             pathlib.PureWindowsPath(args.sas_logging_directory) / log_file_name
         )
-        args.logging_mount_point = str(
+        logging_mount_point = str(
             pathlib.Path(args.logging_mount_point) / log_file_name
         )
+        return (logging_file, logging_mount_point)
     else:
+        # potentially used for local installs of SAS - Untested
         logging_dir = path.parent.absolute() / "logs"
         logging_dir.mkdir(exist_ok=True)
-        logging_file = logging_dir / log_file_name
-        logging_file.touch()
-        args.sas_logging_directory = str(logging_file)
-        args.logging_mount_point = str(logging_file)
-
-    return None
+        logging_file = str(logging_dir / log_file_name)
+        return (logging_file, logging_file)
 
 
 def run_sas_program(args: argparse.Namespace) -> int:
@@ -88,25 +93,37 @@ def run_sas_program(args: argparse.Namespace) -> int:
     try:
         with open(args.program_path) as f:
             program_code = f.read()
-            number_of_replacements = program_code.count(SAS_CLI_REPLACEMENT_IDENTIFIER)
-            if number_of_replacements == 1:
-                if args.show_log:
-                    get_log_file(args)
-                    with open(args.logging_mount_point, "w") as f:
-                        print(f"Log file created at: {args.logging_mount_point}")
-                    replacement_code = (
-                        f'PROC PRINTTO LOG="{args.sas_logging_directory}"; RUN;'
-                    )
-                    program_code = program_code.replace(
-                        SAS_CLI_REPLACEMENT_IDENTIFIER, replacement_code
-                    )
-            elif number_of_replacements > 1:
-                # TODO handle this better - better exit message
-                # line numbers etc. raise exceptions
-                print("There can only be one replacement string. Exiting.")
-                return 1
 
         with get_sas_session() as sas:
+
+            show_live_log = False
+            if args.show_log:
+                # Theres no way to get the live SAS log without directing SAS to
+                # print to a file and using a thread to concurrently read the file
+                sas_log_file_path, log_file_mount_path = setup_logging(args)
+                try:
+                    sas.submit(
+                        f"""%let dir_exists =
+                        %sysfunc(fileexist({args.sas_logging_directory}));
+                    """
+                    )
+                    # check if SAS can reach the directory
+                    if sas.symget("dir_exists", int()):
+                        # check if python can reach the same directory and if so
+                        # create the file.
+                        with open(log_file_mount_path, "w"):
+                            show_live_log = True
+                            logging_code_suffix = (
+                                f'PROC PRINTTO LOG="{sas_log_file_path}"; RUN;\n'
+                            )
+                            program_code = logging_code_suffix + program_code
+                    else:
+                        message = "SAS unable to reach logging "
+                        f"directory: {args.sas_logging_directory}"
+                        raise FileNotFoundError(message)
+                except (OSError, FileNotFoundError) as e:
+                    print(f"Check logging configuration in {args.config}: {e}")
+                    print("Log will print after execution.")
 
             start_time = time.localtime()
             saspy_logger.info(
@@ -114,11 +131,8 @@ def run_sas_program(args: argparse.Namespace) -> int:
                 f"{time.strftime('%H:%M:%S', start_time)}",
             )
 
-            with concurrent.futures.ThreadPoolExecutor() as ex:
-
-                print("=" * os.get_terminal_size().columns)
-                if args.show_log:
-                    log_file_path = pathlib.Path(args.logging_mount_point)
+            if show_live_log:
+                with concurrent.futures.ThreadPoolExecutor() as ex:
 
                     def get_new_lines(file: TextIO) -> Generator[str, None, None]:
                         # go to end of file
@@ -130,7 +144,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
                                 continue
                             yield line
 
-                    with open(log_file_path) as log_file:
+                    with open(log_file_mount_path) as log_file:
                         code_runner = ex.submit(
                             sas.submit,
                             code=program_code,
@@ -141,8 +155,11 @@ def run_sas_program(args: argparse.Namespace) -> int:
                             print(line, end="")
 
                     result = code_runner.result()
-                else:
-                    result = sas.submit(program_code, printto=True)
+            else:
+                result = sas.submit(program_code, printto=True)
+                if args.show_log:
+                    print(result["LOG"])
+
             end_time = time.localtime()
             saspy_logger.info(
                 f"Finished running program: {args.program_path} at "
@@ -255,7 +272,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args, argv = config_parser.parse_known_args()
     defaults = {}
     if args.config:
-        config = configparser.SafeConfigParser()
+        config = configparser.ConfigParser()
         config.read(args.config)
         defaults.update(dict(config.items("DEFAULTS")))
 
