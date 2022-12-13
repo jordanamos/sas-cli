@@ -237,7 +237,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     config_parser.add_argument(
         "-c",
         "--config",
-        help="specify a config file",
+        help="specify a config file. default is %(default)s",
         metavar="FILE",
         default=CONFIG_FILE,
     )
@@ -347,7 +347,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     ret = 0
     args = parser.parse_args(argv)
-    print(vars(args))
+
     if args.command == "run":
         ret = run_sas_program(args)
     elif args.command == "data":
