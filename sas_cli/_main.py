@@ -22,19 +22,6 @@ SAS_CLI_REPLACEMENT_IDENTIFIER = "{{%sas%}}"
 CONFIG_FILE = "config.ini"
 
 
-def load_config(args: argparse.Namespace) -> dict[str, str]:
-
-    pathlib.Path(CONFIG_FILE).touch()
-
-    config = configparser.ConfigParser()
-    config.read(CONFIG_FILE)
-
-    with open(CONFIG_FILE, "w") as config_file:
-        config.write(config_file)
-
-    return dict(config.items("DEFAULT"))
-
-
 def valid_sas_file(filepath: str) -> str:
     try:
         with open(filepath):
@@ -100,11 +87,10 @@ def run_sas_program(args: argparse.Namespace) -> int:
                     program_code = program_code.replace(
                         SAS_CLI_REPLACEMENT_IDENTIFIER, replacement_code
                     )
-            else:
+            elif number_of_replacements > 1:
                 # TODO handle this better - better exit message
                 # line numbers etc. raise exceptions
                 print("There can only be one replacement string. Exiting.")
-                replacement_code = None
                 return 1
 
         with get_sas_session() as sas:
@@ -242,8 +228,29 @@ def get_sas_data(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+
+    config_parser = argparse.ArgumentParser(
+        description=__doc__,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        add_help=False,
+    )
+    config_parser.add_argument(
+        "-c",
+        "--config",
+        help="specify a config file",
+        metavar="FILE",
+        default=CONFIG_FILE,
+    )
+
+    args, argv = config_parser.parse_known_args()
+    defaults = {}
+    if args.config:
+        config = configparser.SafeConfigParser()
+        config.read(args.config)
+        defaults.update(dict(config.items("DEFAULTS")))
+
     parser = argparse.ArgumentParser(
-        description="A command line interface to SAS",
+        description="A command line interface to SAS", parents=[config_parser]
     )
     parser.add_argument(
         "-V",
@@ -251,7 +258,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="version",
         version=f'sas-cli {importlib_metadata.version("sas_cli")}',
     )
-
     subparsers = parser.add_subparsers(
         dest="command",
     )
@@ -337,9 +343,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="specify the SAS internal libref",
     )
 
+    parser.set_defaults(**defaults)
+
     ret = 0
     args = parser.parse_args(argv)
-
+    print(vars(args))
     if args.command == "run":
         ret = run_sas_program(args)
     elif args.command == "data":
