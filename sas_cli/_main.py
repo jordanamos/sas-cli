@@ -2,6 +2,7 @@ import argparse
 import concurrent.futures
 import configparser
 import importlib.metadata as importlib_metadata
+import os
 import pathlib
 import sys
 import time
@@ -58,10 +59,12 @@ def get_sas_session() -> SASsession:
 def setup_logging(args: argparse.Namespace) -> tuple[str, str]:
     """
     Uses the config settings set in config.ini:
-        - sas_logging_directory
-        - logging_mount_point
+        - sas_server_logging_dir
+        - local_logging_dir
 
-    if both are not set, creates a 'logs' directory in the parent folder of the program
+    Requires both to be set, otherwise creates a 'logs' directory in the parent
+    directory of which the program is being executed from
+
     Returns a tuple (2):
         index 0 = the path to the SAS log to be used by SAS program
         index 1 = the local mount point to that same directory
@@ -69,21 +72,21 @@ def setup_logging(args: argparse.Namespace) -> tuple[str, str]:
     path = pathlib.Path(args.program_path)
     log_file_name = f"{path.stem}_{time.strftime('%H%M%S', time.localtime())}.log"
 
-    if args.sas_logging_directory and args.logging_mount_point:
+    if args.sas_server_logging_dir and args.local_logging_dir:
+        # predefined logging directories set
         # SAS windows server
-        logging_file = str(
-            pathlib.PureWindowsPath(args.sas_logging_directory) / log_file_name
+        log_file_sas = str(
+            pathlib.PureWindowsPath(args.sas_server_logging_dir) / log_file_name
         )
-        logging_mount_point = str(
-            pathlib.Path(args.logging_mount_point) / log_file_name
-        )
-        return (logging_file, logging_mount_point)
+        log_file_local = str(pathlib.Path(args.local_logging_dir) / log_file_name)
+        return (log_file_sas, log_file_local)
     else:
+        # no predefined logging directory set in config
+        # create one in the parent directory and set the variables
         # potentially used for local installs of SAS - Untested
         logging_dir = path.parent.absolute() / "logs"
-        logging_dir.mkdir(exist_ok=True)
-        logging_file = str(logging_dir / log_file_name)
-        return (logging_file, logging_file)
+        log_file_sas = log_file_local = str(logging_dir / log_file_name)
+        return (log_file_sas, log_file_local)
 
 
 def run_sas_program(args: argparse.Namespace) -> int:
@@ -98,36 +101,26 @@ def run_sas_program(args: argparse.Namespace) -> int:
 
             show_live_log = False
             if args.show_log:
-                # Theres no way to get the live SAS log without directing SAS to
-                # print to a file and using a thread to concurrently read the file
-                sas_log_file_path, log_file_mount_path = setup_logging(args)
-                try:
-                    if not args.sas_logging_directory:
-                        raise FileNotFoundError(
-                            "option 'sas_logging_directory' not set"
-                        )
-                    sas.submit(
-                        f"""%let dir_exists =
-                        %sysfunc(fileexist({args.sas_logging_directory}));
-                    """
+                log_file_sas, log_file_local = setup_logging(args)
+                # create the local log file
+                pathlib.Path(log_file_local).parent.mkdir(exist_ok=True, parents=True)
+                pathlib.Path(log_file_local).touch()
+                saspy_logger.info(f"Log file is '{log_file_local}'")
+                sas.submit(f"%LET dir_exists = %SYSFUNC(FILEEXIST({log_file_sas}));")
+                # check if SAS can see the newly created log file
+                if sas.symget("dir_exists", int()) == 1 and os.path.exists(
+                    log_file_local
+                ):
+                    show_live_log = True
+                    logging_code_suffix = f'PROC PRINTTO LOG="{log_file_sas}"; RUN;\n'
+                    # prepend code to direct SAS to log to file
+                    # subsequet PROC PRINTTO calls will override this and break the log
+                    program_code = logging_code_suffix + program_code
+                else:
+                    message = (
+                        f"SAS unable to log to file {log_file_sas} or the local file "
+                        "{log_file_local} does not exist. Check config in {args.config}"
                     )
-                    # check if SAS can reach the directory
-                    if sas.symget("dir_exists"):
-                        # check if python can reach the same directory and if so
-                        # create the file.
-                        with open(log_file_mount_path, "w"):
-                            show_live_log = True
-                            logging_code_suffix = (
-                                f'PROC PRINTTO LOG="{sas_log_file_path}"; RUN;\n'
-                            )
-                            program_code = logging_code_suffix + program_code
-                    else:
-                        message = "SAS unable to reach logging "
-                        f"directory: {args.sas_logging_directory}"
-                        raise FileNotFoundError(message)
-                except (OSError, FileNotFoundError) as e:
-                    print(f"Check logging configuration in {args.config}: {e}")
-                    print("Log will print after execution.")
 
             start_time = time.localtime()
             saspy_logger.info(
@@ -148,7 +141,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
                                 continue
                             yield line
 
-                    with open(log_file_mount_path) as log_file:
+                    with open(log_file_local) as log_file:
                         code_runner = ex.submit(
                             sas.submit,
                             code=program_code,
@@ -259,10 +252,8 @@ def get_sas_data(args: argparse.Namespace) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-
     config_parser = argparse.ArgumentParser(
         description=__doc__,
-        formatter_class=argparse.RawDescriptionHelpFormatter,
         add_help=False,
     )
     config_parser.add_argument(
@@ -273,14 +264,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=CONFIG_FILE,
     )
 
-    args, argv = config_parser.parse_known_args()
+    config_args, remaining_args = config_parser.parse_known_args()
     defaults = {
-        "sas_logging_directory": "",
-        "logging_mount_point": "",
+        "sas_server_logging_dir": "",
+        "local_logging_dir": "",
     }
-    if args.config:
+    if config_args.config:
         config = configparser.ConfigParser()
-        config.read(args.config)
+        config.read(config_args.config)
         defaults.update(dict(config.items("DEFAULTS")))
 
     parser = argparse.ArgumentParser(
@@ -377,8 +368,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="specify the SAS internal libref",
     )
 
-    parser.set_defaults(**defaults)
-
+    # parser.set_defaults(**defaults)
     ret = 0
     args = parser.parse_args(argv)
     if args.command == "run":
