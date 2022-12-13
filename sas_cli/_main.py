@@ -1,5 +1,6 @@
 import argparse
 import concurrent.futures
+import configparser
 import importlib.metadata as importlib_metadata
 import os
 import pathlib
@@ -18,6 +19,20 @@ from saspy.sasexceptions import SASIONotSupportedError
 
 MAX_OUTPUT_OBS = 10000
 SAS_CLI_REPLACEMENT_IDENTIFIER = "{{%sas%}}"
+CONFIG_FILE = "config.ini"
+
+
+def load_config(args: argparse.Namespace) -> dict[str, str]:
+
+    pathlib.Path(CONFIG_FILE).touch()
+
+    config = configparser.ConfigParser()
+    config.read(CONFIG_FILE)
+
+    with open(CONFIG_FILE, "w") as config_file:
+        config.write(config_file)
+
+    return dict(config.items("DEFAULT"))
 
 
 def valid_sas_file(filepath: str) -> str:
