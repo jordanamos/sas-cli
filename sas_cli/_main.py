@@ -17,6 +17,7 @@ from saspy.sasexceptions import SASIOConnectionError
 from saspy.sasexceptions import SASIONotSupportedError
 
 MAX_OUTPUT_OBS = 10000
+SAS_CLI_REPLACEMENT_STRING = "{{%sas%}}"
 
 
 def valid_sas_file(filepath: str) -> str:
@@ -60,6 +61,14 @@ def run_sas_program(args: argparse.Namespace) -> int:
     try:
         with open(args.program_path) as f:
             program_code = f.read()
+            number_of_replacements = program_code.count(SAS_CLI_REPLACEMENT_STRING)
+            if number_of_replacements == 1:
+                program_code = program_code.replace(SAS_CLI_REPLACEMENT_STRING, "")
+            elif number_of_replacements > 1:
+                # TODO handle this better - better exit message
+                # line numbers etc. raise exceptions
+                print("There can only be one replacement string. Exiting.")
+                return 1
 
         with get_sas_session() as sas:
             start_time = time.localtime()
@@ -67,37 +76,43 @@ def run_sas_program(args: argparse.Namespace) -> int:
                 f"Started running program: {args.program_path} at "
                 f"{time.strftime('%H:%M:%S', start_time)}",
             )
+
             with concurrent.futures.ThreadPoolExecutor() as ex:
-                path = pathlib.Path("/mnt") / "s" / "Jordan" / "logs" / "test-log3.log"
+                path = pathlib.Path("/mnt") / "s" / "Jordan" / "logs" / "test-log4.log"
+
                 print("=" * os.get_terminal_size().columns)
+                if args.show_log:
 
-                def get_new_lines(file: TextIO) -> Generator[str, None, None]:
-                    # go to end of file
-                    file.seek(0, 2)
-                    while code_runner.running():
-                        line = file.readline()
-                        if not line:
-                            time.sleep(0.1)
-                            continue
-                        yield line
+                    def get_new_lines(file: TextIO) -> Generator[str, None, None]:
+                        # go to end of file
+                        file.seek(0, 2)
+                        while code_runner.running():
+                            line = file.readline()
+                            if not line:
+                                time.sleep(0.1)
+                                continue
+                            yield line
 
-                with open(path) as log_file:
-                    code_runner = ex.submit(
-                        sas.submit,
-                        code=program_code,
-                        printto=True,
-                    )
-                    loglines = get_new_lines(log_file)
-                    for line in loglines:
-                        print(line, end="")
+                    with open(path) as log_file:
+                        code_runner = ex.submit(
+                            sas.submit,
+                            code=program_code,
+                            printto=True,
+                        )
 
-                result = code_runner.result()
+                        loglines = get_new_lines(log_file)
+                        for line in loglines:
+                            print(line, end="")
 
+                    result = code_runner.result()
+                else:
+                    result = sas.submit(program_code, printto=True)
             end_time = time.localtime()
             saspy_logger.info(
                 f"Finished running program: {args.program_path} at "
                 f"{time.strftime('%H:%M:%S', end_time)}\n",
             )
+
             sas_output = result["LST"]
             sas_log = result["LOG"]
             sys_err = sas.SYSERR()
