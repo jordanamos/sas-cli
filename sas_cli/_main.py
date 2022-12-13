@@ -102,13 +102,17 @@ def run_sas_program(args: argparse.Namespace) -> int:
                 # print to a file and using a thread to concurrently read the file
                 sas_log_file_path, log_file_mount_path = setup_logging(args)
                 try:
+                    if not args.sas_logging_directory:
+                        raise FileNotFoundError(
+                            "option 'sas_logging_directory' not set"
+                        )
                     sas.submit(
                         f"""%let dir_exists =
                         %sysfunc(fileexist({args.sas_logging_directory}));
                     """
                     )
                     # check if SAS can reach the directory
-                    if sas.symget("dir_exists", int()):
+                    if sas.symget("dir_exists"):
                         # check if python can reach the same directory and if so
                         # create the file.
                         with open(log_file_mount_path, "w"):
@@ -270,7 +274,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     )
 
     args, argv = config_parser.parse_known_args()
-    defaults = {}
+    defaults = {
+        "sas_logging_directory": "",
+        "logging_mount_point": "",
+    }
     if args.config:
         config = configparser.ConfigParser()
         config.read(args.config)
