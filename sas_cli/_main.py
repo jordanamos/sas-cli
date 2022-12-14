@@ -107,7 +107,7 @@ def setup_live_log(args: argparse.Namespace, sas: SASsession) -> tuple[str, str]
     saspy_logger.info(f"Log file is '{log_file_local}'")
     # this SAS function returns 1 if the dir exists or 0
     sas.submit(f"%LET dir_exists = %SYSFUNC(FILEEXIST({log_file_sas}));")
-
+    print(sas.symget(""))
     # Check if SAS can see the newly created log file
     if sas.symget("dir_exists", int()) == 1:
         return (log_file_sas, log_file_local)
@@ -187,7 +187,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
             sas_output = result["LST"]
             sys_err = sas.SYSERR()
             sys_err_text = sas.SYSERRORTEXT()
-
         if sys_err_text or sys_err > 6:
             message = f"{sys_err}: {sys_err_text}"
             if not args.show_log:
