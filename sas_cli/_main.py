@@ -58,7 +58,8 @@ def get_sas_session() -> SASsession:
 
 def prepare_log_files(args: argparse.Namespace) -> tuple[str, str]:
     """
-    Uses the config settings set in config.ini:
+    Uses the config settings set in specified config
+    file (default config.ini):
         - sas_server_logging_dir
         - local_logging_dir
 
@@ -104,6 +105,7 @@ def setup_live_log(args: argparse.Namespace, sas: SASsession) -> tuple[str, str]
     pathlib.Path(log_file_local).parent.mkdir(exist_ok=True, parents=True)
     pathlib.Path(log_file_local).touch()
     saspy_logger.info(f"Log file is '{log_file_local}'")
+    # this SAS function returns 1 if the dir exists or 0
     sas.submit(f"%LET dir_exists = %SYSFUNC(FILEEXIST({log_file_sas}));")
 
     # Check if SAS can see the newly created log file
