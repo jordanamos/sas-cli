@@ -49,7 +49,7 @@ def get_sas_session() -> SASsession:
         AttributeError,
     ) as e:
         message = (
-            f"\nSaspy configuration error. Configuration file "
+            "\nSaspy configuration error. Configuration file "
             f"not found or is not valid: {e}"
         )
         print(message, file=sys.stderr)
@@ -72,14 +72,14 @@ def prepare_log_files(args: argparse.Namespace) -> tuple[str, str]:
     """
     path = pathlib.Path(args.program_path)
     log_file_name = f"{time.strftime('%H%M%S', time.localtime())}_{path.stem}.log"
-
+    print(path)
     if args.sas_server_logging_dir and args.local_logging_dir:
         # predefined logging directories set
         # SAS windows server
         log_file_sas = str(
-            pathlib.PureWindowsPath(args.sas_server_logging_dir) / log_file_name
+            pathlib.PureWindowsPath(args.sas_server_logging_dir / log_file_name)
         )
-        log_file_local = str(pathlib.Path(args.local_logging_dir) / log_file_name)
+        log_file_local = str(pathlib.Path(args.local_logging_dir / log_file_name))
     else:
         # no predefined logging directory set in config
         # potentially used for local installs of SAS - Untested
@@ -101,13 +101,13 @@ def setup_live_log(args: argparse.Namespace, sas: SASsession) -> tuple[str, str]
     file else deletes the created file and returns None
     """
     log_file_sas, log_file_local = prepare_log_files(args)
+    print(log_file_local)
     # create the local file if it doesnt exist
     pathlib.Path(log_file_local).parent.mkdir(exist_ok=True, parents=True)
     pathlib.Path(log_file_local).touch()
     saspy_logger.info(f"Log file is '{log_file_local}'")
     # this SAS function returns 1 if the dir exists or 0
     sas.submit(f"%LET dir_exists = %SYSFUNC(FILEEXIST({log_file_sas}));")
-    print(sas.symget(""))
     # Check if SAS can see the newly created log file
     if sas.symget("dir_exists", int()) == 1:
         return (log_file_sas, log_file_local)
@@ -150,7 +150,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
                 program_code = logging_code_suffix + program_code
                 with concurrent.futures.ThreadPoolExecutor() as ex:
 
-                    def get_new_lines(file: TextIO) -> Generator[str, None, None]:
+                    def read_new_lines(file: TextIO) -> Generator[str, None, None]:
                         # go to end of file
                         file.seek(0, 2)
                         while code_runner.running():
@@ -166,7 +166,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
                             code=program_code,
                             printto=True,
                         )
-                        loglines = get_new_lines(log_file)
+                        loglines = read_new_lines(log_file)
                         for line in loglines:
                             print(line, end="")
 
@@ -252,6 +252,7 @@ def get_sas_data(args: argparse.Namespace) -> int:
                 results="PANDAS",
             )
             try:
+                print(args.libref)
                 # this is used to parse the dsopts and get an exception we can handle
                 # rather than a crappy SAS log that would otherwise be displayed
                 # with a direct to_df() call
@@ -259,6 +260,7 @@ def get_sas_data(args: argparse.Namespace) -> int:
                 if args.info_only:
                     print(column_info)
                 else:
+                    print("hi there")
                     print(data.to_df())
             except ValueError as e:
                 print(e, file=sys.stderr)
