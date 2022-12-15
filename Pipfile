@@ -6,8 +6,7 @@ name = "pypi"
 [packages]
 saspy = "*"
 sas-cli = {editable = true, path = "."}
-psutil = "*"
-pathos = "*"
+pandas = "*"
 
 [dev-packages]
 pre-commit = "*"

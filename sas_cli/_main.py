@@ -77,9 +77,9 @@ def prepare_log_files(args: argparse.Namespace) -> tuple[str, str]:
         # predefined logging directories set
         # SAS windows server
         log_file_sas = str(
-            pathlib.PureWindowsPath(args.sas_server_logging_dir / log_file_name)
+            pathlib.PureWindowsPath(args.sas_server_logging_dir) / log_file_name
         )
-        log_file_local = str(pathlib.Path(args.local_logging_dir / log_file_name))
+        log_file_local = str(pathlib.Path(args.local_logging_dir) / log_file_name)
     else:
         # no predefined logging directory set in config
         # potentially used for local installs of SAS - Untested
@@ -156,7 +156,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
                         while code_runner.running():
                             line = file.readline()
                             if not line:
-                                time.sleep(0.1)
                                 continue
                             yield line
 
@@ -252,7 +251,6 @@ def get_sas_data(args: argparse.Namespace) -> int:
                 results="PANDAS",
             )
             try:
-                print(args.libref)
                 # this is used to parse the dsopts and get an exception we can handle
                 # rather than a crappy SAS log that would otherwise be displayed
                 # with a direct to_df() call
@@ -260,7 +258,6 @@ def get_sas_data(args: argparse.Namespace) -> int:
                 if args.info_only:
                     print(column_info)
                 else:
-                    print("hi there")
                     print(data.to_df())
             except ValueError as e:
                 print(e, file=sys.stderr)
@@ -273,7 +270,7 @@ def get_sas_data(args: argparse.Namespace) -> int:
     return 0
 
 
-def main(argv: Sequence[str] | None = None) -> int:
+def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     config_parser = argparse.ArgumentParser(
         description=__doc__,
         add_help=False,
@@ -286,7 +283,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=CONFIG_FILE,
     )
 
-    config_args, remaining_args = config_parser.parse_known_args()
+    config_args, remaining_args = config_parser.parse_known_args(argv)
+
     logging_defaults = {
         "sas_server_logging_dir": "",
         "local_logging_dir": "",
@@ -389,11 +387,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="LIBREF",
         help="specify the SAS internal libref",
     )
-
     parser.set_defaults(**logging_defaults)
-    args = parser.parse_args(argv)
-    ret = 0
+    return parser.parse_args(argv)
 
+
+def main(argv: Sequence[str] | None = None) -> int:
+    args = parse_args(argv)
+    ret = 0
     if args.command == "run":
         ret = run_sas_program(args)
     elif args.command == "data":
