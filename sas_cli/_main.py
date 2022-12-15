@@ -72,7 +72,7 @@ def prepare_log_files(args: argparse.Namespace) -> tuple[str, str]:
     """
     path = pathlib.Path(args.program_path)
     log_file_name = f"{time.strftime('%H%M%S', time.localtime())}_{path.stem}.log"
-    print(path)
+
     if args.sas_server_logging_dir and args.local_logging_dir:
         # predefined logging directories set
         # SAS windows server
@@ -101,7 +101,7 @@ def setup_live_log(args: argparse.Namespace, sas: SASsession) -> tuple[str, str]
     file else deletes the created file and returns None
     """
     log_file_sas, log_file_local = prepare_log_files(args)
-    print(log_file_local)
+
     # create the local file if it doesnt exist
     pathlib.Path(log_file_local).parent.mkdir(exist_ok=True, parents=True)
     pathlib.Path(log_file_local).touch()
