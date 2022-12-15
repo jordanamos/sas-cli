@@ -37,13 +37,13 @@ def test_parse_config_args(tmp_path):
     f = tmp_path / "config.ini"
     f.write_text(
         f"""[LOGGING]
-        sas_server_logging_dir = {tmp_path / "jordan"}
-        local_logging_dir = {tmp_path / "jordan"}
+        sas_server_logging_dir = {tmp_path / "sas_log"}
+        local_logging_dir = {tmp_path / "local_log"}
     """
     )
     args = _main.parse_args(["--config", str(f)])
-    assert args.sas_server_logging_dir == str(tmp_path / "jordan")
-    assert args.local_logging_dir == str(tmp_path / "jordan")
+    assert args.sas_server_logging_dir == str(tmp_path / "sas_log")
+    assert args.local_logging_dir == str(tmp_path / "local_log")
 
 
 def test_valid_sas_file(tmp_path):
@@ -136,21 +136,6 @@ def test_get_sas_session(MockSASsession):
     assert isinstance(_main.get_sas_session(), _main.SASsession)
 
 
-# def test_get_sas_session_exceptions(tmp_path, capsys, monkeypatch):
-#     cfg_file = tmp_path / "f.py"
-#     cfg_file.write_text("SAS_config_names=['hi']")
-#     with mock.patch("saspy.sasbase.SASconfig._find_config") as _find_config:
-#         _find_config(cfgfile=cfg_file.name)
-#     with mock.patch("sas_cli._main.SASsession.__init__()") as sas:
-#         sas = mock.MagicMock(cfgfile=cfg_file.name)
-#     mock_sas_session.side_effect = _main.SASConfigNotValidError("")
-#     with pytest.raises(_main.SASConfigNotValidError) as e:
-#         _main.get_sas_session()
-#         out, err = capsys.readouterr()
-#         assert err == ("\nSaspy configuration error. Configuration file "
-#             f"not found or is not valid: {e}")
-
-
 def test_run_program_trivial(
     mock_sas_session,
     tmp_path,
@@ -180,7 +165,7 @@ def test_run_program_sas_error(
     tmp_path,
 ):
     f = tmp_path / "f.sas"
-    f.write_text("%PUT hello world")
+    f.write_text("%PUT hello world;")
     args = mock.Mock()
     args.program_path = f
     args.show_log = False
