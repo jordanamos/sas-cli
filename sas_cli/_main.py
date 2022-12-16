@@ -160,7 +160,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
                 # prepend code to direct SAS to log to file
                 # subsequent PROC PRINTTO calls will override this and break the log
                 program_code = logging_code_suffix + program_code
-                print(program_code)
                 with concurrent.futures.ThreadPoolExecutor() as ex:
 
                     def read_new_lines(file: TextIO) -> Generator[str, None, None]:
@@ -195,8 +194,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
                 f"Finished running program: {args.program_path} at "
                 f"{time.strftime('%H:%M:%S', end_time)}\n",
             )
-
-            sas_output = result["LST"]
             sys_err = sas.SYSERR()
             sys_err_text = sas.SYSERRORTEXT()
         if sys_err_text or sys_err > 6:
@@ -208,8 +205,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
                 if show_log.lower() in ["y", "yes", "si"]:
                     print(result["LOG"])
             raise RuntimeError(message)
-        if sas_output:
-            print(f"\nOutput:\n{sas_output}")
     except RuntimeError as e:
         print(
             f"\nAn error occured while running '{args.program_path}': {e}",
