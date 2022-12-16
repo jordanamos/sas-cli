@@ -217,7 +217,7 @@ def test_get_sas_session_config_error(MockSASsession, exception_type, tmp_path, 
 
 @mock.patch("sas_cli._main.SASsession.__init__", return_value=None)
 def test_get_sas_session_ioconnection_error(MockSASsession):
-    MockSASsession.side_effect = _main.SASIOConnectionError("error msg")
+    MockSASsession.side_effect = _main.SASIOConnectionError("msg")
     with pytest.raises(_main.SASIOConnectionError):
         _main.get_sas_session()
 
@@ -244,7 +244,7 @@ def test_run_program_trivial(
     ],
     indirect=True,
 )
-def test_run_program_sas_error(
+def test_run_program_runtime_error(
     mock_sas_session,
     capsys,
     monkeypatch,
@@ -256,7 +256,7 @@ def test_run_program_sas_error(
     args.program_path = f
     args.show_log = False
     monkeypatch.setattr("sys.stdin", StringIO("no"))
-    assert _main.run_sas_program(args) > 0
+    assert _main.run_sas_program(args) == 1
     out, err = capsys.readouterr()
     syserr = mock_sas_session.return_value.__enter__.return_value.SYSERR.return_value
     syserrortext = (
