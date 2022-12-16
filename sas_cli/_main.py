@@ -37,6 +37,16 @@ def valid_sas_file(filepath: str) -> str:
     return filepath
 
 
+def integer_in_range(obs: str) -> int:
+
+    if int(obs) < 1 or int(obs) > MAX_OUTPUT_OBS:
+        raise argparse.ArgumentTypeError(
+            f"The specified number of output observations '{obs}' must be "
+            "between 1 and {MAX_OUTPUT_OBS:,}"
+        )
+    return int(obs)
+
+
 def get_sas_session() -> SASsession:
     try:
         return SASsession()
@@ -345,9 +355,9 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     data_parser.add_argument(
         "--obs",
         metavar="",
-        type=int,
+        type=integer_in_range,
         help=f"specify the number of output observations \
-            between 0 and {MAX_OUTPUT_OBS:,} (default is %(default)s).",
+            between 1 and {MAX_OUTPUT_OBS:,} (default is %(default)s).",
         default=10,
     )
     data_parser.add_argument(
@@ -397,12 +407,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "run":
         ret = run_sas_program(args)
     elif args.command == "data":
-        if args.obs > MAX_OUTPUT_OBS:
-            print(
-                f"Option obs '{args.obs:,}' is too large and has been "
-                f"set to {MAX_OUTPUT_OBS:,}."
-            )
-            args.obs = MAX_OUTPUT_OBS
         ret = get_sas_data(args)
     elif args.command == "lib":
         ret = get_sas_lib(args)

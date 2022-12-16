@@ -46,17 +46,76 @@ def test_parse_config_args(tmp_path):
     assert args.local_logging_dir == str(tmp_path / "local_log")
 
 
+@pytest.mark.parametrize(
+    "obs",
+    (
+        0,
+        _main.MAX_OUTPUT_OBS + 1,
+    ),
+)
+def test_integer_in_range_error(obs, capsys):
+    with pytest.raises(argparse.ArgumentTypeError):
+        _main.integer_in_range(str(obs))
+        out, err = capsys.readouterr()
+        assert (
+            err == f"The specified number of output observations '{obs}' must be "
+            "between 1 and {_main.MAX_OUTPUT_OBS:,}"
+        )
+
+
+@pytest.mark.parametrize(
+    "obs",
+    (
+        1,
+        _main.MAX_OUTPUT_OBS - 1,
+        _main.MAX_OUTPUT_OBS,
+    ),
+)
+def test_integer_in_range(obs):
+    assert _main.integer_in_range(str(obs)) == int(obs)
+
+
+def test_get_sas_data_is_called():
+    with mock.patch("sas_cli._main.get_sas_data", return_value=0) as m:
+        _main.main(["data", "test_table"])
+        m.assert_called_once()
+
+
+def test_run_sas_program_is_called(tmp_path):
+    f = tmp_path / "f.sas"
+    f.write_text("%PUT hello world;")
+    with mock.patch("sas_cli._main.run_sas_program", return_value=0) as m:
+        _main.main(["run", str(f)])
+        m.assert_called_once()
+
+
+def test_get_sas_lib_is_called():
+    with mock.patch("sas_cli._main.get_sas_lib", return_value=0) as m:
+        _main.main(["lib", "c_tst"])
+        m.assert_called_once()
+
+
 def test_valid_sas_file(tmp_path):
     f = tmp_path / "f.sas"
     f.touch()
     assert _main.valid_sas_file(str(f)) == str(f)
 
 
-def test_valid_sas_file_error(tmp_path):
+def test_valid_sas_file_invalid_ext(tmp_path, capsys):
     f = tmp_path / "f.txt"
     f.touch()
     with pytest.raises(argparse.ArgumentTypeError):
         _main.valid_sas_file(str(f))
+        out, err = capsys.readouterr()
+        assert err == f"The file '{f}' is not a valid .sas file"
+
+
+def test_valid_sas_file_os_error(tmp_path, capsys):
+    f = tmp_path / "f.sas"
+    with pytest.raises(argparse.ArgumentTypeError) as e:
+        _main.valid_sas_file(str(f))
+        out, err = capsys.readouterr()
+        assert err == f"Can't open '{f}': {e}"
 
 
 def test_delete_file_if_exists(tmp_path):
@@ -134,6 +193,33 @@ def test_setup_live_log_not_exists(
 @mock.patch("sas_cli._main.SASsession.__init__", return_value=None)
 def test_get_sas_session(MockSASsession):
     assert isinstance(_main.get_sas_session(), _main.SASsession)
+
+
+@pytest.mark.parametrize(
+    "exception_type",
+    (
+        _main.SASConfigNotValidError,
+        _main.SASConfigNotFoundError,
+        _main.SASIONotSupportedError,
+        AttributeError,
+    ),
+)
+@mock.patch("sas_cli._main.SASsession.__init__", return_value=None)
+def test_get_sas_session_config_error(MockSASsession, exception_type, tmp_path, capsys):
+    f = tmp_path / " config.ini"
+    MockSASsession.side_effect = exception_type(f)
+    with pytest.raises(_main.SASConfigNotValidError) as e:
+        _main.get_sas_session()
+        out, err = capsys.readouterr()
+        assert err == "\nSaspy configuration error. Configuration file "
+        f"not found or is not valid: {e}"
+
+
+@mock.patch("sas_cli._main.SASsession.__init__", return_value=None)
+def test_get_sas_session_ioconnection_error(MockSASsession):
+    MockSASsession.side_effect = _main.SASIOConnectionError("error msg")
+    with pytest.raises(_main.SASIOConnectionError):
+        _main.get_sas_session()
 
 
 def test_run_program_trivial(
@@ -221,3 +307,8 @@ def test_get_sas_data_error(mock_sas_session, capsys):
         assert _main.get_sas_data(args) == 1
         out, err = capsys.readouterr()
         assert err == e
+
+
+def test_get_sas_lib(mock_sas_session):
+    args = mock.Mock()
+    assert _main.get_sas_lib(args) == 0
