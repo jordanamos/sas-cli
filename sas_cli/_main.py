@@ -4,6 +4,7 @@ import configparser
 import importlib.metadata as importlib_metadata
 import os
 import pathlib
+import re
 import sys
 import time
 from collections.abc import Generator
@@ -132,6 +133,35 @@ def setup_live_log(args: argparse.Namespace, sas: SASsession) -> tuple[str, str]
         return None
 
 
+def print_output_info(file: str) -> None:
+
+    time_to_wait = 10
+    time_counter = 0
+    while not os.path.exists(file):
+        time.sleep(1)
+        time_counter += 1
+        if time_counter > time_to_wait:
+            break
+
+    def clean(line: str) -> str:
+        line = (
+            re.sub(r"\/\* JOBSPLIT: ", "", line).replace(" */", "").replace(" SEQ", "")
+        )
+        return line
+
+    def get_matching_lines(thefile: TextIO) -> Generator[str, None, None]:
+        # strings_to_match = ["OUTPUT"]
+        # if any(match in line for match in strings_to_match):
+        for line in thefile:
+            if "OUTPUT" in line:
+                yield clean(line)
+
+    with open(file) as f:
+        loglines = get_matching_lines(f)
+        for line in loglines:
+            print(line, end="")
+
+
 def run_sas_program(args: argparse.Namespace) -> int:
     """
     Runs a SAS program file
@@ -140,6 +170,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
         with open(args.program_path) as f:
             program_code = f.read()
 
+        log_file_local = None
         with get_sas_session() as sas:
             log_file_paths = None
 
@@ -154,8 +185,10 @@ def run_sas_program(args: argparse.Namespace) -> int:
 
             if log_file_paths:
                 log_file_sas, log_file_local = log_file_paths
-                logging_code_suffix = f'PROC PRINTTO LOG="{log_file_sas}"; RUN;\n'
-                f'PROC SCAPROC;RECORD "{log_file_sas}.txt"; RUN;\n'
+                logging_code_suffix = (
+                    f'PROC PRINTTO LOG="{log_file_sas}"; RUN;\n'
+                    f'PROC SCAPROC;RECORD "{log_file_sas}.txt"; RUN;\n'
+                )
 
                 # prepend code to direct SAS to log to file
                 # subsequent PROC PRINTTO calls will override this and break the log
@@ -183,7 +216,9 @@ def run_sas_program(args: argparse.Namespace) -> int:
 
                     result = code_runner.result()
                     # delete the log file
+
                     delete_file_if_exists(log_file_local)
+
             else:
                 result = sas.submit(program_code, printto=True)
                 if args.show_log:
@@ -196,6 +231,9 @@ def run_sas_program(args: argparse.Namespace) -> int:
             )
             sys_err = sas.SYSERR()
             sys_err_text = sas.SYSERRORTEXT()
+
+        if log_file_local:
+            print_output_info(f"{log_file_local}.txt")
         if sys_err_text or sys_err > 6:
             message = f"{sys_err}: {sys_err_text}"
             if not args.show_log:
