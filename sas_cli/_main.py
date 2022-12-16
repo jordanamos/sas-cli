@@ -155,9 +155,12 @@ def run_sas_program(args: argparse.Namespace) -> int:
             if log_file_paths:
                 log_file_sas, log_file_local = log_file_paths
                 logging_code_suffix = f'PROC PRINTTO LOG="{log_file_sas}"; RUN;\n'
+                f'PROC SCAPROC;RECORD "{log_file_sas}.txt"; RUN;\n'
+
                 # prepend code to direct SAS to log to file
                 # subsequent PROC PRINTTO calls will override this and break the log
                 program_code = logging_code_suffix + program_code
+                print(program_code)
                 with concurrent.futures.ThreadPoolExecutor() as ex:
 
                     def read_new_lines(file: TextIO) -> Generator[str, None, None]:
