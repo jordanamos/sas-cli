@@ -11,6 +11,7 @@ from collections.abc import Generator
 from collections.abc import Sequence
 from typing import TextIO
 
+import tabulate
 from saspy import logger as saspy_logger
 from saspy import SASsession
 from saspy.sasexceptions import SASConfigNotFoundError
@@ -133,33 +134,41 @@ def setup_live_log(args: argparse.Namespace, sas: SASsession) -> tuple[str, str]
         return None
 
 
-def print_output_info(file: str) -> None:
+def print_output_info(scaproc_file: str) -> None:
 
-    time_to_wait = 10
+    time_to_wait = 5
     time_counter = 0
-    while not os.path.exists(file):
+
+    while not os.path.exists(scaproc_file) and time_to_wait < time_counter:
         time.sleep(1)
         time_counter += 1
-        if time_counter > time_to_wait:
-            break
 
-    def clean(line: str) -> str:
-        line = (
-            re.sub(r"\/\* JOBSPLIT: ", "", line).replace(" */", "").replace(" SEQ", "")
-        )
-        return line
-
-    def get_matching_lines(thefile: TextIO) -> Generator[str, None, None]:
+    def get_jobsplit_lines(scaproc_file: TextIO) -> Generator[str, None, None]:
         # strings_to_match = ["OUTPUT"]
         # if any(match in line for match in strings_to_match):
-        for line in thefile:
-            if "OUTPUT" in line:
-                yield clean(line)
+        for line in scaproc_file:
+            if "JOBSPLIT" in line and "OUTPUT" in line:
+                line = re.sub(r"\/\* JOBSPLIT: ", "", line).replace(" */", "")
+                yield line
 
-    with open(file) as f:
-        loglines = get_matching_lines(f)
-        for line in loglines:
-            print(line, end="")
+    # https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/proc/p0k5uaxpaz2uzin1qvbqmmafnqtl.htm
+    if os.path.exists(scaproc_file):
+        with open(scaproc_file) as f:
+            loglines = get_jobsplit_lines(f)
+            keys = ["DATASET", "FILE"]
+            ret: dict[str, set[str]] = {key: set() for key in keys}
+            for line in loglines:
+                segments = line.split()
+                key = segments.pop(0)
+                value = segments.pop()
+                ret[key].add(value)
+        print(f"\nOutput\n\n {tabulate.tabulate(ret, headers=list(ret.keys()))}\n")
+    else:
+        print(
+            f"Unable to get output information (waited {time_to_wait} secs). "
+            "Check {scaproc_file} exists.",
+            file=sys.stderr,
+        )
 
 
 def run_sas_program(args: argparse.Namespace) -> int:
@@ -196,8 +205,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
                 with concurrent.futures.ThreadPoolExecutor() as ex:
 
                     def read_new_lines(file: TextIO) -> Generator[str, None, None]:
-                        # go to end of file
-                        file.seek(0, 2)
                         while code_runner.running():
                             line = file.readline()
                             if not line:
@@ -205,6 +212,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
                             yield line
 
                     with open(log_file_local) as log_file:
+                        log_file.seek(0, 2)
                         code_runner = ex.submit(
                             sas.submit,
                             code=program_code,
@@ -216,7 +224,6 @@ def run_sas_program(args: argparse.Namespace) -> int:
 
                     result = code_runner.result()
                     # delete the log file
-
                     delete_file_if_exists(log_file_local)
 
             else:
@@ -329,7 +336,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=CONFIG_FILE,
     )
 
-    config_args, remaining_args = config_parser.parse_known_args(argv)
+    config_args, _ = config_parser.parse_known_args(argv)
 
     logging_defaults = {
         "sas_server_logging_dir": "",
