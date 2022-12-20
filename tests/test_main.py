@@ -10,12 +10,7 @@ from sas_cli import _main
 def mock_sas_session(request):
 
     with mock.patch("sas_cli._main.SASsession") as sas:
-        sas.return_value.__enter__.return_value.submit = mock.Mock(
-            return_value={
-                "LOG": "",
-                "LST": "",
-            },
-        )
+
         sas.SYSERR = mock.Mock(
             return_value=request.param.get("syserr", 0),
         )
@@ -216,18 +211,22 @@ def test_get_sas_session_ioconnection_error(MockSASsession):
         _main.get_sas_session()
 
 
-def test_run_program_trivial(
-    mock_sas_session,
-    tmp_path,
-):
+def test_run_program_simple(tmp_path, capsys):
     f = tmp_path / "f.sas"
-    f.write_text("%PUT hello world")
+    f.write_text("%PUT hello world;")
     args = mock.Mock()
     args.program_path = f
-    args.show_log = False
+    args.show_log = True
     args.sas_server_logging_dir = None
     args.local_logging_dir = None
-    assert _main.run_sas_program(mock_sas_session, args) == 0
+    with mock.patch("sas_cli._main.SASsession") as sas:
+        log_msg = "sas sucks"
+        sas.SYSERR = mock.Mock(return_value=0)
+        sas.SYSERRORTEXT = mock.Mock(return_value="")
+        sas.submit = mock.Mock(return_value={"LOG": log_msg, "LST": ""})
+        assert _main.run_sas_program_simple(sas, args) == 0
+        out, err = capsys.readouterr()
+        assert out == log_msg
 
 
 @pytest.mark.parametrize(
@@ -261,42 +260,57 @@ def test_run_program_runtime_error(
     )
 
 
-# @mock.patch("sas_cli._main.setup_live_log")
-# def test_run_program_no_live_log(setup_live_log, mock_sas_session, tmp_path):
-#     f = tmp_path / "f.sas"
-#     f.write_text("%PUT hello world")
-#     args = mock.Mock()
-#     args.program_path = f
-#     args.show_log = True
-#     setup_live_log.return_value = None
-#     assert _main.run_sas_program(args) == 0
-
-
-def test_get_sas_data():
+@pytest.mark.parametrize(("info_only", "ret"), ((True, 1), (False, 0)))
+def test_get_sas_data(info_only, ret, mock_sas_session, capsys):
     args = mock.Mock()
-    args.dataset = "test_dataset"
-    args.info_only = False
-    args.command = "data"
-    args.libref = "c_tst"
-    args.obs = 10
-    mock_sas = mock.MagicMock()
-    assert _main.get_sas_data(mock_sas, args) == 0
+    args.info_only = info_only
+    mock_sas_session.sasdata.return_value.to_df = mock.Mock(return_value=ret)
+    mock_sas_session.sasdata.return_value.columnInfo = mock.Mock(return_value=ret)
+
+    assert _main.get_sas_data(mock_sas_session, args) == 0
+    mock_sas_session.sasdata.assert_called_once()
+    mock_sas_session.sasdata.return_value.columnInfo.assert_called_once()
+    if not info_only:
+        mock_sas_session.sasdata.return_value.to_df.assert_called_once()
+    out, err = capsys.readouterr()
+    assert out == (str(ret) + "\n")
 
 
-def test_get_sas_data_error(mock_sas_session, capsys):
+def test_get_sas_data_error(mock_sas_session):
     args = mock.Mock()
-    args.dataset = "test_dataset"
-    args.info_only = False
-    args.command = "data"
-    args.libref = "c_tst"
-    args.obs = 10
-    mock_sas_session.sasdata = mock.Mock(side_effect=ValueError)
-    with pytest.raises(ValueError) as e:
-        assert _main.get_sas_data(mock_sas_session, args) == 1
-        out, err = capsys.readouterr()
-        assert err == e
+    mock_sas_session.sasdata.return_value.columnInfo = mock.Mock(side_effect=ValueError)
+    assert _main.get_sas_data(mock_sas_session, args) == 1
+    mock_sas_session.sasdata.return_value.columnInfo.assert_called_once()
 
 
 def test_get_sas_lib(mock_sas_session):
     args = mock.Mock()
     assert _main.get_sas_lib(mock_sas_session, args) == 0
+
+
+def test_get_outputs(tmp_path):
+    f = tmp_path / "f.txt"
+    f.write_text(
+        r"""
+        /* JOBSPLIT: LIBNAME C_TST SPDE '\\tmp1234\SASData\unit\' */
+        /* JOBSPLIT: DATASET OUTPUT SEQ WORK._TMP.DATA */
+        /* JOBSPLIT: DATASET OUTPUT SEQ WORK._TMP.DATA */
+        /* JOBSPLIT: DATASET OUTPUT SEQ WORK._TMP2.DATA */
+        /* JOBSPLIT: LIBNAME WORK V9 'G:\SAS_Work\_TD3592_Jfgfdg1343_\Prc2' */
+        /* JOBSPLIT: DATASET INPUT MULTI C_TST.TEST_DATABASE.INDEX */
+        /* JOBSPLIT: LIBNAME C_TST SPDE '\\tmp1234\SASData\unit\' */
+        /* JOBSPLIT: FILE OUTPUT \\tmp1234\124051_test_program.log.txt */
+    """
+    )
+    expected = {
+        "DATASET": {"WORK._TMP2.DATA", "WORK._TMP.DATA"},
+        "FILE": {"\\\\tmp1234\\124051_test_program.log.txt"},
+    }
+    assert _main.get_outputs(f) == expected
+
+
+def test_get_outputs_error(tmp_path, capsys):
+    f = tmp_path / "f.txt"
+    assert _main.get_outputs(f) is None
+    out, err = capsys.readouterr()
+    assert err is not None

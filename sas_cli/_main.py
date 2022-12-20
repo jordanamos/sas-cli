@@ -66,7 +66,7 @@ def get_sas_session() -> SASsession:
         raise SASConfigNotValidError(message)
 
 
-def print_output_info(scaproc_file: pathlib.Path) -> None:
+def get_outputs(scaproc_file: pathlib.Path) -> dict[str, set[str]] | None:
     def get_jobsplit_lines(scaproc_file: TextIO) -> Generator[str, None, None]:
         for line in scaproc_file:
             if "JOBSPLIT" in line and "OUTPUT" in line:
@@ -84,12 +84,13 @@ def print_output_info(scaproc_file: pathlib.Path) -> None:
                 key = segments.pop(0)
                 value = segments.pop()
                 ret[key].add(value)
-        print(f"\nOutputs:\n\n {tabulate.tabulate(ret, headers=list(ret.keys()))}\n")
+            return ret
     else:
         print(
             f"Unable to get output information check {scaproc_file} exists.",
             file=sys.stderr,
         )
+        return None
 
 
 def run_sas_program_simple(sas: SASsession, args: argparse.Namespace) -> int:
@@ -103,11 +104,9 @@ def run_sas_program_simple(sas: SASsession, args: argparse.Namespace) -> int:
         )
         result = sas.submit(program_code, printto=True)
         if args.show_log:
-            print(result["LOG"])
+            print(result["LOG"], end="")
         sys_err_text = sas.SYSERRORTEXT()
         sys_err = sas.SYSERR()
-        print(sys_err_text)
-        print(sys_err)
         if sys_err_text or sys_err:
             message = f"{sys_err}: {sys_err_text}"
             raise RuntimeError(message)
@@ -193,14 +192,16 @@ def run_sas_program(sas: SASsession, args: argparse.Namespace) -> int:
 
                 with open(str(log_file_local)) as log:
                     errors: Generator[list[str], None, None] = (
-                        [f"{log_file_local}:{num}", line]
-                        for num, line in enumerate(log, 1)
-                        if line.startswith("ERROR")
+                        [f"{log_file_local}:{num}", error_line]
+                        for num, error_line in enumerate(log, 1)
+                        if error_line.startswith("ERROR")
                     )
                     headers = ["Log Line", "Error Text"]
-                    print(f"{tabulate.tabulate(errors, headers=headers)}")
-
-                print_output_info(output_file_local)
+                    print(f"Errors:\n\n{tabulate.tabulate(errors, headers=headers)}")
+                    outputs = get_outputs(output_file_local)
+                    if outputs:
+                        table = tabulate.tabulate(outputs, headers=list(outputs.keys()))
+                        print(f"\nOutputs:\n\n {table}\n")
             else:
                 print(
                     f"SAS unable to log to '{log_file_sas}' or '{log_file_local}'"
@@ -236,18 +237,18 @@ def get_sas_data(sas: SASsession, args: argparse.Namespace) -> int:
     or info about the dataset if the --info-only(-i) flag is set
     (PROC DATASETS)
     """
-    data = sas.sasdata(
-        table=args.dataset,
-        libref=args.libref,
-        dsopts={
-            "where": args.where,
-            "obs": args.obs,
-            "keep": args.keep,
-            "drop": args.drop,
-        },
-        results="PANDAS",
-    )
     try:
+        data = sas.sasdata(
+            table=args.dataset,
+            libref=args.libref,
+            dsopts={
+                "where": args.where,
+                "obs": args.obs,
+                "keep": args.keep,
+                "drop": args.drop,
+            },
+            results="PANDAS",
+        )
         # this is used to parse the dsopts and get an exception we can handle
         # rather than a crappy SAS log that would otherwise be displayed
         # with a direct to_df() call
