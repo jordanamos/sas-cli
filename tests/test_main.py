@@ -1,8 +1,6 @@
 import argparse
-from io import StringIO
 from unittest import mock
 
-import pandas as pd
 import pytest
 
 from sas_cli import _main
@@ -18,16 +16,17 @@ def mock_sas_session(request):
                 "LST": "",
             },
         )
-        sas.return_value.__enter__.return_value.SYSERR = mock.Mock(
+        sas.SYSERR = mock.Mock(
             return_value=request.param.get("syserr", 0),
         )
-        sas.return_value.__enter__.return_value.SYSERRORTEXT = mock.Mock(
+        sas.SYSERRORTEXT = mock.Mock(
             return_value=request.param.get("syserrtext", ""),
         )
         yield sas
 
 
 # tests
+@pytest.mark.usefixtures("mock_sas_session")
 def test_main_trivial():
     assert _main.main(()) == 0
 
@@ -74,12 +73,14 @@ def test_integer_in_range(obs):
     assert _main.integer_in_range(str(obs)) == int(obs)
 
 
+@pytest.mark.usefixtures("mock_sas_session")
 def test_get_sas_data_is_called():
     with mock.patch("sas_cli._main.get_sas_data", return_value=0) as m:
         _main.main(["data", "test_table"])
         m.assert_called_once()
 
 
+@pytest.mark.usefixtures("mock_sas_session")
 def test_run_sas_program_is_called(tmp_path):
     f = tmp_path / "f.sas"
     f.write_text("%PUT hello world;")
@@ -88,6 +89,7 @@ def test_run_sas_program_is_called(tmp_path):
         m.assert_called_once()
 
 
+@pytest.mark.usefixtures("mock_sas_session")
 def test_get_sas_lib_is_called():
     with mock.patch("sas_cli._main.get_sas_lib", return_value=0) as m:
         _main.main(["lib", "c_tst"])
@@ -223,7 +225,9 @@ def test_run_program_trivial(
     args = mock.Mock()
     args.program_path = f
     args.show_log = False
-    assert _main.run_sas_program(args) == 0
+    args.sas_server_logging_dir = None
+    args.local_logging_dir = None
+    assert _main.run_sas_program(mock_sas_session, args) == 0
 
 
 @pytest.mark.parametrize(
@@ -239,7 +243,6 @@ def test_run_program_trivial(
 def test_run_program_runtime_error(
     mock_sas_session,
     capsys,
-    monkeypatch,
     tmp_path,
 ):
     f = tmp_path / "f.sas"
@@ -247,16 +250,14 @@ def test_run_program_runtime_error(
     args = mock.Mock()
     args.program_path = f
     args.show_log = False
-    monkeypatch.setattr("sys.stdin", StringIO("no"))
-    assert _main.run_sas_program(args) == 1
+    args.sas_server_logging_dir = None
+    args.local_logging_dir = None
+    assert _main.run_sas_program(mock_sas_session, args) == 1
     out, err = capsys.readouterr()
-    syserr = mock_sas_session.return_value.__enter__.return_value.SYSERR.return_value
-    syserrortext = (
-        mock_sas_session.return_value.__enter__.return_value.SYSERRORTEXT.return_value
-    )
     assert (
         err == f"\nAn error occured while running '{args.program_path}': "
-        f"{syserr}: {syserrortext}\n"
+        f"{mock_sas_session.SYSERR.return_value}: "
+        f"{mock_sas_session.SYSERRORTEXT.return_value}\n"
     )
 
 
@@ -271,18 +272,15 @@ def test_run_program_runtime_error(
 #     assert _main.run_sas_program(args) == 0
 
 
-def test_get_sas_data(mock_sas_session):
+def test_get_sas_data():
     args = mock.Mock()
     args.dataset = "test_dataset"
     args.info_only = False
     args.command = "data"
     args.libref = "c_tst"
     args.obs = 10
-    mock_sas_session.return_value.__enter__.return_value.sasdata = mock.Mock()
-    mock_sas_session.return_value.__enter__.return_value.sasdata.return_value.to_df = (
-        mock.Mock(return_value=pd.DataFrame())
-    )
-    assert _main.get_sas_data(args) == 0
+    mock_sas = mock.MagicMock()
+    assert _main.get_sas_data(mock_sas, args) == 0
 
 
 def test_get_sas_data_error(mock_sas_session, capsys):
@@ -292,15 +290,13 @@ def test_get_sas_data_error(mock_sas_session, capsys):
     args.command = "data"
     args.libref = "c_tst"
     args.obs = 10
-    mock_sas_session.return_value.__enter__.return_value.sasdata = mock.Mock(
-        side_effect=ValueError
-    )
+    mock_sas_session.sasdata = mock.Mock(side_effect=ValueError)
     with pytest.raises(ValueError) as e:
-        assert _main.get_sas_data(args) == 1
+        assert _main.get_sas_data(mock_sas_session, args) == 1
         out, err = capsys.readouterr()
         assert err == e
 
 
 def test_get_sas_lib(mock_sas_session):
     args = mock.Mock()
-    assert _main.get_sas_lib(args) == 0
+    assert _main.get_sas_lib(mock_sas_session, args) == 0
