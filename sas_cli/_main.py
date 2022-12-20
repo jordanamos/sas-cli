@@ -40,7 +40,6 @@ def valid_sas_file(filepath: str) -> str:
 
 
 def integer_in_range(obs: str) -> int:
-
     if int(obs) < 1 or int(obs) > MAX_OUTPUT_OBS:
         raise argparse.ArgumentTypeError(
             f"The specified number of output observations '{obs}' must be "
@@ -68,84 +67,16 @@ def get_sas_session() -> SASsession:
         raise SASConfigNotValidError(message)
 
 
-def prepare_log_files(args: argparse.Namespace) -> tuple[str, str]:
-    """
-    Uses the config settings set in specified config
-    file (default config.ini):
-        - sas_server_logging_dir
-        - local_logging_dir
-
-    Requires both to be set, otherwise creates a 'logs' directory in the parent
-    directory of which the program is being executed from
-
-    Returns a tuple (2):
-        index 0 = the path to the SAS log to be used by SAS program
-        index 1 = the local mount point to that same directory
-    """
-    path = pathlib.Path(args.program_path)
-    log_file_name = f"{time.strftime('%H%M%S', time.localtime())}_{path.stem}.log"
-
-    if args.sas_server_logging_dir and args.local_logging_dir:
-        # predefined logging directories set
-        # SAS windows server
-        log_file_sas = str(
-            pathlib.PureWindowsPath(args.sas_server_logging_dir) / log_file_name
-        )
-        log_file_local = str(pathlib.Path(args.local_logging_dir) / log_file_name)
-    else:
-        # no predefined logging directory set in config
-        # potentially used for local installs of SAS - Untested
-        logging_dir = path.parent.absolute() / "logs"
-        log_file_sas = log_file_local = str(logging_dir / log_file_name)
-
-    return (log_file_sas, log_file_local)
-
-
-def delete_file_if_exists(path: str) -> None:
-    if os.path.exists(path):
-        os.remove(path)
-
-
-def setup_live_log(args: argparse.Namespace, sas: SASsession) -> tuple[str, str] | None:
-    """
-    Creates the log file at the given directory and checks to see if SAS can see it
-    and if so, returns a tuple containing the SAS path and the local path to the log
-    file else deletes the created file and returns None
-    """
-    log_file_sas, log_file_local = prepare_log_files(args)
-
-    # create the local file if it doesnt exist
-    pathlib.Path(log_file_local).parent.mkdir(exist_ok=True, parents=True)
-    pathlib.Path(log_file_local).touch()
-    saspy_logger.info(f"Log file is '{log_file_local}'")
-    # this SAS function returns 1 if the dir exists or 0
-    sas.submit(f"%LET dir_exists = %SYSFUNC(FILEEXIST({log_file_sas}));")
-    # Check if SAS can see the newly created log file
-    if sas.symget("dir_exists", int()) == 1:
-        return (log_file_sas, log_file_local)
-    else:
-        message = (
-            f"SAS unable to log to file {log_file_sas} or the local file "
-            f"{log_file_local} does not exist. Check config in {args.config}\n"
-            "Printing log after execution."
-        )
-        print(message)
-        delete_file_if_exists(log_file_local)
-        return None
-
-
-def print_output_info(scaproc_file: str) -> None:
+def print_output_info(scaproc_file: pathlib.Path) -> None:
 
     time_to_wait = 5
     time_counter = 0
 
-    while not os.path.exists(scaproc_file) and time_to_wait < time_counter:
+    while not scaproc_file.exists() and time_to_wait > time_counter:
         time.sleep(1)
         time_counter += 1
 
     def get_jobsplit_lines(scaproc_file: TextIO) -> Generator[str, None, None]:
-        # strings_to_match = ["OUTPUT"]
-        # if any(match in line for match in strings_to_match):
         for line in scaproc_file:
             if "JOBSPLIT" in line and "OUTPUT" in line:
                 line = re.sub(r"\/\* JOBSPLIT: ", "", line).replace(" */", "")
@@ -166,7 +97,7 @@ def print_output_info(scaproc_file: str) -> None:
     else:
         print(
             f"Unable to get output information (waited {time_to_wait} secs). "
-            "Check {scaproc_file} exists.",
+            f"Check {scaproc_file} exists.",
             file=sys.stderr,
         )
 
@@ -179,29 +110,64 @@ def run_sas_program(args: argparse.Namespace) -> int:
         with open(args.program_path) as f:
             program_code = f.read()
 
-        log_file_local = None
         with get_sas_session() as sas:
-            log_file_paths = None
 
-            if args.show_log:
-                log_file_paths = setup_live_log(args, sas)
+            sas_write_to_files = False
 
-            start_time = time.localtime()
-            saspy_logger.info(
-                f"Started running program: {args.program_path} at "
-                f"{time.strftime('%H:%M:%S', start_time)}",
-            )
+            log_file_sas = None
+            log_file_local = None
+            output_file_sas = None
+            output_file_local = None
+            # attemp to setup live logging and scaproc to handle outputs
+            if args.sas_server_logging_dir and args.local_logging_dir:
+                args.sas_server_logging_dir = pathlib.PureWindowsPath(
+                    args.sas_server_logging_dir
+                )
+                args.local_logging_dir = pathlib.Path(args.local_logging_dir)
 
-            if log_file_paths:
-                log_file_sas, log_file_local = log_file_paths
-                logging_code_suffix = (
-                    f'PROC PRINTTO LOG="{log_file_sas}"; RUN;\n'
-                    f'PROC SCAPROC;RECORD "{log_file_sas}.txt"; RUN;\n'
+                base_file_name = (
+                    f"{time.strftime('%H%M%S', time.localtime())}_"
+                    f"{pathlib.Path(args.program_path).stem}"
                 )
 
-                # prepend code to direct SAS to log to file
-                # subsequent PROC PRINTTO calls will override this and break the log
-                program_code = logging_code_suffix + program_code
+                log_file_sas = args.sas_server_logging_dir / (base_file_name + ".log")
+                log_file_local = args.local_logging_dir / (base_file_name + ".log")
+                output_file_sas = args.sas_server_logging_dir / (
+                    base_file_name + ".txt"
+                )
+                output_file_local = args.local_logging_dir / (base_file_name + ".txt")
+
+                # create the local file if it doesnt exist
+                log_file_local.parent.mkdir(exist_ok=True, parents=True)
+                log_file_local.touch()
+                # Check if SAS can see the newly created log file
+                # this SAS function returns 1 if the file exists or 0
+                sas.submit(f"%LET dir_exists = %SYSFUNC(FILEEXIST({log_file_sas}));")
+                if sas.symget("dir_exists", int()) == 1:
+                    # setup scaproc for output and loging file
+                    program_code = (
+                        f'PROC SCAPROC;RECORD "{output_file_sas}"; RUN;\n'
+                        + f'PROC PRINTTO LOG="{log_file_sas}"; RUN;\n'
+                        + program_code
+                    )
+                    sas_write_to_files = True
+                else:
+                    print(
+                        f"SAS unable to log to {log_file_sas} or {log_file_local}"
+                        f" does not exist. Check config in {args.config}\n"
+                    )
+                    # delete the file if we created it above
+                    log_file_local.unlink(missing_ok=True)
+
+            saspy_logger.info(
+                f"Started running {args.program_path} at "
+                f"{time.strftime('%H:%M:%S', time.localtime())}",
+            )
+
+            if args.show_log and sas_write_to_files:
+                # read the log file as it is being written to by SAS.
+                # a live log is better than getting the log AFTER the program
+                # has executed particularly for longer running programs
                 with concurrent.futures.ThreadPoolExecutor() as ex:
 
                     def read_new_lines(file: TextIO) -> Generator[str, None, None]:
@@ -211,7 +177,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
                                 continue
                             yield line
 
-                    with open(log_file_local) as log_file:
+                    with open(str(log_file_local)) as log_file:
                         log_file.seek(0, 2)
                         code_runner = ex.submit(
                             sas.submit,
@@ -223,33 +189,31 @@ def run_sas_program(args: argparse.Namespace) -> int:
                             print(line, end="")
 
                     result = code_runner.result()
-                    # delete the log file
-                    delete_file_if_exists(log_file_local)
-
             else:
                 result = sas.submit(program_code, printto=True)
                 if args.show_log:
                     print(result["LOG"])
+                sys_err_text = sas.SYSERRORTEXT()
+                sys_err = sas.SYSERR()
+                if sys_err_text or sys_err:
+                    message = f"{sys_err}: {sys_err_text}"
+                    raise RuntimeError(message)
 
-            end_time = time.localtime()
             saspy_logger.info(
-                f"Finished running program: {args.program_path} at "
-                f"{time.strftime('%H:%M:%S', end_time)}\n",
+                f"Finished at {time.strftime('%H:%M:%S', time.localtime())}",
             )
-            sys_err = sas.SYSERR()
-            sys_err_text = sas.SYSERRORTEXT()
 
-        if log_file_local:
-            print_output_info(f"{log_file_local}.txt")
-        if sys_err_text or sys_err > 6:
-            message = f"{sys_err}: {sys_err_text}"
-            if not args.show_log:
-                show_log = input(
-                    "Do you wish to view the log before exiting? [y]es / [n]o:"
+        if sas_write_to_files:
+            with open(str(log_file_local)) as log:
+                errors: Generator[list[str], None, None] = (
+                    [f"{log_file_local}:{num}", line]
+                    for num, line in enumerate(log, 1)
+                    if line.startswith("ERROR")
                 )
-                if show_log.lower() in ["y", "yes", "si"]:
-                    print(result["LOG"])
-            raise RuntimeError(message)
+                headers = ["Log Line", "Error Text"]
+                print(f"\n{tabulate.tabulate(errors, headers=headers)}")
+            if output_file_local is not None:
+                print_output_info(output_file_local)
     except RuntimeError as e:
         print(
             f"\nAn error occured while running '{args.program_path}': {e}",

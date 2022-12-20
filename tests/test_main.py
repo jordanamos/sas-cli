@@ -1,5 +1,4 @@
 import argparse
-import os
 from io import StringIO
 from unittest import mock
 
@@ -118,76 +117,69 @@ def test_valid_sas_file_os_error(tmp_path, capsys):
         assert err == f"Can't open '{f}': {e}"
 
 
-def test_delete_file_if_exists(tmp_path):
-    f = tmp_path / "f.txt"
-    f.touch()
-    _main.delete_file_if_exists(str(f))
-    assert not os.path.exists(str(f))
+# def test_prepare_log_files(tmp_path, monkeypatch):
+#     monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+#     f = tmp_path / "f.sas"
+#     args = mock.Mock()
+#     args.program_path = f.name
+#     args.sas_server_logging_dir = tmp_path
+#     args.local_logging_dir = tmp_path
+#     monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+#     assert _main.prepare_log_files(args) == (
+#         str(_main.pathlib.PureWindowsPath(tmp_path / "1234_f.log")),
+#         str(_main.pathlib.Path(tmp_path / "1234_f.log")),
+#     )
 
 
-def test_prepare_log_files(tmp_path, monkeypatch):
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    f = tmp_path / "f.sas"
-    args = mock.Mock()
-    args.program_path = f.name
-    args.sas_server_logging_dir = tmp_path
-    args.local_logging_dir = tmp_path
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    assert _main.prepare_log_files(args) == (
-        str(_main.pathlib.PureWindowsPath(tmp_path / "1234_f.log")),
-        str(_main.pathlib.Path(tmp_path / "1234_f.log")),
-    )
+# @mock.patch("sas_cli._main.argparse.Namespace")
+# def test_prepare_log_files_creates_logs_dir(args, tmp_path, monkeypatch):
+#     monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+#     f = tmp_path / "f.sas"
+#     args = mock.Mock()
+#     args.program_path = f
+#     args.sas_server_logging_dir = ""
+#     args.local_logging_dir = ""
+#     monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+#     assert _main.prepare_log_files(args) == (
+#         str(tmp_path / "logs" / "1234_f.log"),
+#         str(tmp_path / "logs" / "1234_f.log"),
+#     )
 
 
-@mock.patch("sas_cli._main.argparse.Namespace")
-def test_prepare_log_files_creates_logs_dir(args, tmp_path, monkeypatch):
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    f = tmp_path / "f.sas"
-    args = mock.Mock()
-    args.program_path = f
-    args.sas_server_logging_dir = ""
-    args.local_logging_dir = ""
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    assert _main.prepare_log_files(args) == (
-        str(tmp_path / "logs" / "1234_f.log"),
-        str(tmp_path / "logs" / "1234_f.log"),
-    )
+# @mock.patch("sas_cli._main.SASsession")
+# def test_setup_live_log(
+#     MockSASsession,
+#     monkeypatch,
+#     tmp_path,
+# ):
+#     f = tmp_path / "f.sas"
+#     args = mock.Mock()
+#     args.config = "config.ini"
+#     args.program_path = f
+#     args.sas_server_logging_dir = tmp_path
+#     args.local_logging_dir = tmp_path
+#     MockSASsession.symget.return_value = 1
+#     monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+#     assert _main.setup_live_log(args, MockSASsession) == _main.prepare_log_files(args)
+#     assert os.path.exists(tmp_path / "1234_f.log")
 
 
-@mock.patch("sas_cli._main.SASsession")
-def test_setup_live_log(
-    MockSASsession,
-    monkeypatch,
-    tmp_path,
-):
-    f = tmp_path / "f.sas"
-    args = mock.Mock()
-    args.config = "config.ini"
-    args.program_path = f
-    args.sas_server_logging_dir = tmp_path
-    args.local_logging_dir = tmp_path
-    MockSASsession.symget.return_value = 1
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    assert _main.setup_live_log(args, MockSASsession) == _main.prepare_log_files(args)
-    assert os.path.exists(tmp_path / "1234_f.log")
-
-
-@mock.patch("sas_cli._main.SASsession")
-def test_setup_live_log_not_exists(
-    MockSASsession,
-    monkeypatch,
-    tmp_path,
-):
-    f = tmp_path / "f.sas"
-    args = mock.Mock()
-    args.config = "config.ini"
-    args.program_path = f
-    args.sas_server_logging_dir = ""
-    args.local_logging_dir = ""
-    MockSASsession.symget.return_value = 0
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    assert _main.setup_live_log(args, MockSASsession) is None
-    assert not os.path.exists(tmp_path / "1234_f.log")
+# @mock.patch("sas_cli._main.SASsession")
+# def test_setup_live_log_not_exists(
+#     MockSASsession,
+#     monkeypatch,
+#     tmp_path,
+# ):
+#     f = tmp_path / "f.sas"
+#     args = mock.Mock()
+#     args.config = "config.ini"
+#     args.program_path = f
+#     args.sas_server_logging_dir = ""
+#     args.local_logging_dir = ""
+#     MockSASsession.symget.return_value = 0
+#     monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+#     assert _main.setup_live_log(args, MockSASsession) is None
+#     assert not os.path.exists(tmp_path / "1234_f.log")
 
 
 @mock.patch("sas_cli._main.SASsession.__init__", return_value=None)
@@ -268,15 +260,15 @@ def test_run_program_runtime_error(
     )
 
 
-@mock.patch("sas_cli._main.setup_live_log")
-def test_run_program_no_live_log(setup_live_log, mock_sas_session, tmp_path):
-    f = tmp_path / "f.sas"
-    f.write_text("%PUT hello world")
-    args = mock.Mock()
-    args.program_path = f
-    args.show_log = True
-    setup_live_log.return_value = None
-    assert _main.run_sas_program(args) == 0
+# @mock.patch("sas_cli._main.setup_live_log")
+# def test_run_program_no_live_log(setup_live_log, mock_sas_session, tmp_path):
+#     f = tmp_path / "f.sas"
+#     f.write_text("%PUT hello world")
+#     args = mock.Mock()
+#     args.program_path = f
+#     args.show_log = True
+#     setup_live_log.return_value = None
+#     assert _main.run_sas_program(args) == 0
 
 
 def test_get_sas_data(mock_sas_session):
