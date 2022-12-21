@@ -1,4 +1,5 @@
 import argparse
+import os
 from unittest import mock
 
 import pytest
@@ -21,9 +22,9 @@ def mock_sas_session(request):
 
 
 # tests
-@pytest.mark.usefixtures("mock_sas_session")
 def test_main_trivial():
-    assert _main.main(()) == 0
+    with mock.patch("sas_cli._main.SASsession"):
+        assert _main.main(()) == 0
 
 
 def test_parse_config_args(tmp_path):
@@ -211,55 +212,6 @@ def test_get_sas_session_ioconnection_error(MockSASsession):
         _main.get_sas_session()
 
 
-def test_run_program_simple(tmp_path, capsys):
-    f = tmp_path / "f.sas"
-    f.write_text("%PUT hello world;")
-    args = mock.Mock()
-    args.program_path = f
-    args.show_log = True
-    args.sas_server_logging_dir = None
-    args.local_logging_dir = None
-    with mock.patch("sas_cli._main.SASsession") as sas:
-        log_msg = "sas sucks"
-        sas.SYSERR = mock.Mock(return_value=0)
-        sas.SYSERRORTEXT = mock.Mock(return_value="")
-        sas.submit = mock.Mock(return_value={"LOG": log_msg, "LST": ""})
-        assert _main.run_sas_program_simple(sas, args) == 0
-        out, err = capsys.readouterr()
-        assert out == log_msg
-
-
-@pytest.mark.parametrize(
-    "mock_sas_session",
-    [
-        dict(
-            syserr=1012,
-            syserrtext="File WORK.DOESNOTEXIST.DATA does not exist.",
-        ),
-    ],
-    indirect=True,
-)
-def test_run_program_runtime_error(
-    mock_sas_session,
-    capsys,
-    tmp_path,
-):
-    f = tmp_path / "f.sas"
-    f.write_text("%PUT hello world;")
-    args = mock.Mock()
-    args.program_path = f
-    args.show_log = False
-    args.sas_server_logging_dir = None
-    args.local_logging_dir = None
-    assert _main.run_sas_program(mock_sas_session, args) == 1
-    out, err = capsys.readouterr()
-    assert (
-        err == f"\nAn error occured while running '{args.program_path}': "
-        f"{mock_sas_session.SYSERR.return_value}: "
-        f"{mock_sas_session.SYSERRORTEXT.return_value}\n"
-    )
-
-
 @pytest.mark.parametrize(("info_only", "ret"), ((True, 1), (False, 0)))
 def test_get_sas_data(info_only, ret, mock_sas_session, capsys):
     args = mock.Mock()
@@ -314,3 +266,100 @@ def test_get_outputs_error(tmp_path, capsys):
     assert _main.get_outputs(f) is None
     out, err = capsys.readouterr()
     assert err is not None
+
+
+def test_run_program_simple(tmp_path, capsys):
+    f = tmp_path / "f.sas"
+    f.write_text("%PUT hello world;")
+    args = mock.Mock()
+    args.program_path = f
+    args.show_log = True
+    args.sas_server_logging_dir = None
+    args.local_logging_dir = None
+    with mock.patch("sas_cli._main.SASsession") as sas:
+        log_msg = "sas sucks"
+        sas.SYSERR = mock.Mock(return_value=0)
+        sas.SYSERRORTEXT = mock.Mock(return_value="")
+        sas.submit = mock.Mock(return_value={"LOG": log_msg, "LST": ""})
+        assert _main.run_sas_program_simple(sas, args) == 0
+        out, err = capsys.readouterr()
+        assert out == log_msg
+
+
+@pytest.mark.parametrize(
+    "mock_sas_session",
+    [
+        dict(
+            syserr=1012,
+            syserrtext="File WORK.DOESNOTEXIST.DATA does not exist.",
+        ),
+    ],
+    indirect=True,
+)
+def test_run_program_runtime_error(
+    mock_sas_session,
+    capsys,
+    tmp_path,
+):
+    f = tmp_path / "f.sas"
+    f.write_text("%PUT hello world;")
+    args = mock.Mock()
+    args.program_path = f
+    args.show_log = False
+    args.sas_server_logging_dir = None
+    args.local_logging_dir = None
+    assert _main.run_sas_program(mock_sas_session, args) == 1
+    out, err = capsys.readouterr()
+    assert (
+        err == f"\nAn error occured while running '{args.program_path}': "
+        f"{mock_sas_session.SYSERR.return_value}: "
+        f"{mock_sas_session.SYSERRORTEXT.return_value}\n"
+    )
+
+
+def test_run_program_no_live_log(
+    capsys,
+    tmp_path,
+    monkeypatch,
+):
+    p = tmp_path / "prog.sas"
+    p.write_text("%PUT hello world;")
+
+    args = mock.Mock()
+    args.program_path = p
+    args.show_log = False
+    args.sas_server_logging_dir = tmp_path
+    args.local_logging_dir = tmp_path
+    with mock.patch("sas_cli._main.SASsession") as sas:
+        monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+        sas.symget = mock.Mock(return_value=1)
+        assert _main.run_sas_program(sas, args) == 0
+        out, err = capsys.readouterr()
+        assert os.path.exists(tmp_path / "1234_prog.log")
+        assert out is not None
+
+
+def test_run_program_logging_dirs_not_exist(
+    capsys,
+    tmp_path,
+    monkeypatch,
+):
+    p = tmp_path / "prog.sas"
+    p.write_text("%PUT hello world;")
+
+    args = mock.Mock()
+    args.program_path = p
+    args.show_log = False
+    args.sas_server_logging_dir = tmp_path
+    args.local_logging_dir = tmp_path
+    log_file = (tmp_path / "1234_prog.log").touch()
+    with mock.patch("sas_cli._main.SASsession") as sas:
+        monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+        sas.symget = mock.Mock(return_value=0)
+        sas.submit = mock.Mock(return_value={"LOG": "", "LST": ""})
+        sas.SYSERR = mock.Mock(return_value=0)
+        sas.SYSERRORTEXT = mock.Mock(return_value="")
+        assert _main.run_sas_program(sas, args) == 0
+        out, err = capsys.readouterr()
+        assert not os.path.exists(str(log_file))
+        assert out is not None
