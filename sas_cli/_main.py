@@ -2,6 +2,7 @@ import argparse
 import concurrent.futures
 import configparser
 import importlib.metadata as importlib_metadata
+import os
 import re
 import sys
 import time
@@ -42,6 +43,12 @@ def integer_in_range(obs: str) -> int:
             "between 1 and {MAX_OUTPUT_OBS:,}"
         )
     return int(obs)
+
+
+def delete_file_if_exists(file: Path) -> None:
+    if os.path.exists(str(file)):
+        print(f"Deleting file {file}")
+        file.unlink(missing_ok=True)
 
 
 def get_outputs(scaproc_file: Path) -> dict[str, set[str]] | None:
@@ -116,10 +123,10 @@ def run_sas_program(args: argparse.Namespace) -> int:
 
         log_file_sas = args.sas_server_logging_dir / (base_file_name + ".log")
         log_file_local = args.local_logging_dir / (base_file_name + ".log")
-        output_file_sas = args.sas_server_logging_dir / (
+        scaproc_file_sas = args.sas_server_logging_dir / (
             base_file_name + "_scaproc.txt"
         )
-        output_file_local = args.local_logging_dir / (base_file_name + "_scaproc.txt")
+        scaproc_file_local = args.local_logging_dir / (base_file_name + "_scaproc.txt")
         log_file_local.parent.mkdir(exist_ok=True, parents=True)
         log_file_local.touch()
         # Check if SAS can see the newly created log file
@@ -130,16 +137,16 @@ def run_sas_program(args: argparse.Namespace) -> int:
                 f"SAS unable to log to '{log_file_sas}' or '{log_file_local}'"
                 f" does not exist. Check config in {args.config}\n"
             )
-            # delete the file if we created it above
-            log_file_local.unlink(missing_ok=True)
+            # no longer logging to file, delete the file we made above
+            delete_file_if_exists(log_file_local)
             return run_sas_program_simple(sas, args)
         else:
             with open(args.program_path) as f:
                 program_code = f.read()
 
             program_code = (
-                f'PROC PRINTTO LOG="{log_file_sas}"; RUN;\n'
-                + f'PROC SCAPROC; RECORD "{output_file_sas}"; RUN;\n'
+                f'PROC SCAPROC; RECORD "{scaproc_file_sas}"; RUN;\n'
+                + f'PROC PRINTTO LOG="{log_file_sas}"; RUN;\n'
                 + program_code
                 + "\nPROC SCAPROC; WRITE; RUN;"
             )
@@ -167,7 +174,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
                         for line in loglines:
                             print(line, end="")
             else:
-                print(sas.submit(program_code, printto=True))
+                sas.submit(program_code, printto=True)
 
             with open(str(log_file_local)) as log:
                 errors: Generator[list[str], None, None] = (
@@ -177,10 +184,15 @@ def run_sas_program(args: argparse.Namespace) -> int:
                 )
                 headers = ["Log Line", "Error Text"]
                 print(f"Errors:\n\n{tabulate.tabulate(errors, headers=headers)}")
-                outputs = get_outputs(output_file_local)
+                outputs = get_outputs(scaproc_file_local)
                 if outputs:
                     table = tabulate.tabulate(outputs, headers=list(outputs.keys()))
                     print(f"\nOutputs:\n\n {table}\n")
+
+            # clean up output files
+            if args.clean_up:
+                delete_file_if_exists(log_file_local)
+                delete_file_if_exists(scaproc_file_local)
     return 0
 
 
@@ -284,9 +296,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--show-log",
         dest="show_log",
         action="store_true",
-        help="displays the SAS log once the program has finished executing",
+        help="attemps to display the live SAS log during execution using the settings "
+        f"in {config_args.config}, otherwise after program execution",
     )
-
+    run_parser.add_argument(
+        "--no-clean-up",
+        dest="clean_up",
+        action="store_false",
+        help="outfiles including logs won't be deleted after execution",
+    )
     # data parser
     data_parser = subparsers.add_parser(
         "data",
