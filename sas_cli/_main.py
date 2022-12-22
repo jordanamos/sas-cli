@@ -14,10 +14,6 @@ from typing import TextIO
 import tabulate
 from saspy import logger as saspy_logger
 from saspy import SASsession
-from saspy.sasexceptions import SASConfigNotFoundError
-from saspy.sasexceptions import SASConfigNotValidError
-from saspy.sasexceptions import SASIOConnectionError
-from saspy.sasexceptions import SASIONotSupportedError
 
 MAX_OUTPUT_OBS = 10000
 SAS_CLI_REPLACEMENT_IDENTIFIER = "{{%sas%}}"
@@ -46,25 +42,6 @@ def integer_in_range(obs: str) -> int:
             "between 1 and {MAX_OUTPUT_OBS:,}"
         )
     return int(obs)
-
-
-def get_sas_session() -> SASsession:
-    try:
-        return SASsession()
-    except SASIOConnectionError:
-        raise
-    except (
-        SASConfigNotValidError,
-        SASConfigNotFoundError,
-        SASIONotSupportedError,
-        AttributeError,
-    ) as e:
-        message = (
-            "\nSaspy configuration error. Configuration file "
-            f"not found or is not valid: {e}"
-        )
-        print(message, file=sys.stderr)
-        raise SASConfigNotValidError(message)
 
 
 def get_outputs(scaproc_file: Path) -> dict[str, set[str]] | None:
@@ -108,7 +85,7 @@ def run_sas_program_simple(sas: SASsession, args: argparse.Namespace) -> int:
             print(result["LOG"], end="")
         sys_err_text = sas.SYSERRORTEXT()
         sys_err = sas.SYSERR()
-        if sys_err_text or sys_err:
+        if sys_err_text or sys_err > 1:
             message = f"{sys_err}: {sys_err_text}"
             raise RuntimeError(message)
     except RuntimeError as e:
@@ -120,11 +97,11 @@ def run_sas_program_simple(sas: SASsession, args: argparse.Namespace) -> int:
     return 0
 
 
-def run_sas_program(sas: SASsession, args: argparse.Namespace) -> int:
+def run_sas_program(args: argparse.Namespace) -> int:
     """
     Runs a SAS program file
     """
-    try:
+    with SASsession() as sas:
         if not (args.sas_server_logging_dir and args.local_logging_dir):
             return run_sas_program_simple(sas, args)
 
@@ -148,8 +125,15 @@ def run_sas_program(sas: SASsession, args: argparse.Namespace) -> int:
         # Check if SAS can see the newly created log file
         # this SAS function returns 1 if the file exists or 0
         sas.submit(f"%LET dir_exists = %SYSFUNC(FILEEXIST({log_file_sas}));")
-        if sas.symget("dir_exists", int()) == 1:
-
+        if not sas.symget("dir_exists", int()) == 1:
+            print(
+                f"SAS unable to log to '{log_file_sas}' or '{log_file_local}'"
+                f" does not exist. Check config in {args.config}\n"
+            )
+            # delete the file if we created it above
+            log_file_local.unlink(missing_ok=True)
+            return run_sas_program_simple(sas, args)
+        else:
             with open(args.program_path) as f:
                 program_code = f.read()
 
@@ -183,7 +167,7 @@ def run_sas_program(sas: SASsession, args: argparse.Namespace) -> int:
                         for line in loglines:
                             print(line, end="")
             else:
-                sas.submit(program_code, printto=True)
+                print(sas.submit(program_code, printto=True))
 
             with open(str(log_file_local)) as log:
                 errors: Generator[list[str], None, None] = (
@@ -197,64 +181,54 @@ def run_sas_program(sas: SASsession, args: argparse.Namespace) -> int:
                 if outputs:
                     table = tabulate.tabulate(outputs, headers=list(outputs.keys()))
                     print(f"\nOutputs:\n\n {table}\n")
-        else:
-            print(
-                f"SAS unable to log to '{log_file_sas}' or '{log_file_local}'"
-                f" does not exist. Check config in {args.config}\n"
-            )
-            # delete the file if we created it above
-            log_file_local.unlink(missing_ok=True)
-            return run_sas_program_simple(sas, args)
-    except (
-        SASIOConnectionError,
-        SASConfigNotValidError,
-    ):
-        return 1
     return 0
 
 
-def get_sas_lib(sas: SASsession, args: argparse.Namespace) -> int:
+def get_sas_lib(args: argparse.Namespace) -> int:
     """
     List the members or datasets within a SAS library
     """
-    list_of_tables = sas.list_tables(
-        args.libref,
-        results="pandas",
-    )
-    if list_of_tables is not None:
-        print(list_of_tables)
+    with SASsession() as sas:
+        list_of_tables = sas.list_tables(
+            args.libref,
+            results="pandas",
+        )
+        if list_of_tables is not None:
+            print(list_of_tables)
     return 0
 
 
-def get_sas_data(sas: SASsession, args: argparse.Namespace) -> int:
+def get_sas_data(args: argparse.Namespace) -> int:
     """
     Get sample data from a SAS dataset
     or info about the dataset if the --info-only(-i) flag is set
     (PROC DATASETS)
     """
-    try:
-        data = sas.sasdata(
-            table=args.dataset,
-            libref=args.libref,
-            dsopts={
-                "where": args.where,
-                "obs": args.obs,
-                "keep": args.keep,
-                "drop": args.drop,
-            },
-            results="PANDAS",
-        )
-        # this is used to parse the dsopts and get an exception we can handle
-        # rather than a crappy SAS log that would otherwise be displayed
-        # with a direct to_df() call
-        column_info = data.columnInfo()
-        if args.info_only:
-            print(column_info)
-        else:
-            print(data.to_df())
-    except ValueError as e:
-        print(e, file=sys.stderr)
-        return 1
+    with SASsession() as sas:
+        try:
+            data = sas.sasdata(
+                table=args.dataset,
+                libref=args.libref,
+                dsopts={
+                    "where": args.where,
+                    "obs": args.obs,
+                    "keep": args.keep,
+                    "drop": args.drop,
+                },
+                results="PANDAS",
+            )
+            # this is used to parse the dsopts and get an exception we can handle
+            # rather than a crappy SAS log that would otherwise be displayed
+            # with a direct to_df() call
+            column_info = data.columnInfo()
+            if args.info_only:
+                print(column_info)
+                pass
+            else:
+                print(data.to_df())
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return 1
     return 0
 
 
@@ -382,13 +356,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     ret = 0
-    with get_sas_session() as sas:
-        if args.command == "run":
-            ret = run_sas_program(sas, args)
-        elif args.command == "data":
-            ret = get_sas_data(sas, args)
-        elif args.command == "lib":
-            ret = get_sas_lib(sas, args)
+
+    if args.command == "run":
+        ret = run_sas_program(args)
+    elif args.command == "data":
+        ret = get_sas_data(args)
+    elif args.command == "lib":
+        ret = get_sas_lib(args)
 
     return ret
 
