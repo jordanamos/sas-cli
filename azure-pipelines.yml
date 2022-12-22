@@ -2,10 +2,6 @@ trigger:
 - main
 
 pool: jordan-pool
-strategy:
-  matrix:
-    Python310:
-      python.version: '3.10'
 
 steps:
 - script: |
@@ -13,8 +9,8 @@ steps:
   displayName: 'proxy'
 - task: UsePythonVersion@0
   inputs:
-    versionSpec: '$(python.version)'
-  displayName: 'Use Python $(python.version)'
+    versionSpec: '3.10'
+  displayName: 'Use Python 3.10'
 
 - script: |
     python -m pip install --upgrade pip
