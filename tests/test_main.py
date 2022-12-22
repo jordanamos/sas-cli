@@ -84,15 +84,15 @@ def test_delete_file_if_exists_no_file(tmp_path, capsys):
     assert out == ""
 
 
-@pytest.mark.usefixtures("mock_sas_session")
-def test_get_sas_data_is_called():
+@mock.patch("sas_cli._main.SASsession")
+def test_get_sas_data_is_called(_):
     with mock.patch("sas_cli._main.get_sas_data", return_value=0) as get_sas_data:
         _main.main(["data", "test_table"])
         get_sas_data.assert_called_once()
 
 
-@pytest.mark.usefixtures("mock_sas_session")
-def test_run_sas_program_is_called(tmp_path):
+@mock.patch("sas_cli._main.SASsession")
+def test_run_sas_program_is_called(_, tmp_path):
     f = tmp_path / "f.sas"
     f.write_text("%PUT hello world;")
     with mock.patch("sas_cli._main.run_sas_program", return_value=0) as run_sas_program:
@@ -100,8 +100,8 @@ def test_run_sas_program_is_called(tmp_path):
         run_sas_program.assert_called_once()
 
 
-@pytest.mark.usefixtures("mock_sas_session")
-def test_get_sas_lib_is_called():
+@mock.patch("sas_cli._main.SASsession")
+def test_get_sas_lib_is_called(_):
     with mock.patch("sas_cli._main.get_sas_lib", return_value=0) as get_sas_lib:
         _main.main(["lib", "c_tst"])
         get_sas_lib.assert_called_once()
