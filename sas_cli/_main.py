@@ -82,16 +82,20 @@ def run_sas_program_simple(sas: SASsession, args: argparse.Namespace) -> int:
     try:
         with open(args.program_path) as f:
             program_code = f.read()
-
         saspy_logger.info(
             f"Started running {args.program_path} at "
             f"{time.strftime('%H:%M:%S', time.localtime())}",
         )
         result = sas.submit(program_code, printto=True)
+        saspy_logger.info(
+            f"Finished running {args.program_path} at "
+            f"{time.strftime('%H:%M:%S', time.localtime())}",
+        )
         if args.show_log:
             print(result["LOG"], end="")
         sys_err_text = sas.SYSERRORTEXT()
         sys_err = sas.SYSERR()
+
         if sys_err_text or sys_err > 1:
             message = f"{sys_err}: {sys_err_text}"
             raise RuntimeError(message)
@@ -189,10 +193,10 @@ def run_sas_program(args: argparse.Namespace) -> int:
                     table = tabulate.tabulate(outputs, headers=list(outputs.keys()))
                     print(f"\nOutputs:\n\n {table}\n")
 
-            # clean up output files
-            if args.clean_up:
-                delete_file_if_exists(log_file_local)
-                delete_file_if_exists(scaproc_file_local)
+    # clean up output files
+    if args.clean_up:
+        delete_file_if_exists(log_file_local)
+        delete_file_if_exists(scaproc_file_local)
     return 0
 
 

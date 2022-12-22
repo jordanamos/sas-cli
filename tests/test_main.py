@@ -1,5 +1,4 @@
 import argparse
-import os
 from unittest import mock
 
 import pytest
@@ -52,7 +51,7 @@ def test_parse_config_args(tmp_path):
         _main.MAX_OUTPUT_OBS + 1,
     ),
 )
-def test_integer_in_range_error(obs, capsys):
+def test_integer_in_range_error(obs):
     with pytest.raises(argparse.ArgumentTypeError):
         _main.integer_in_range(str(obs))
 
@@ -67,6 +66,22 @@ def test_integer_in_range_error(obs, capsys):
 )
 def test_integer_in_range(obs):
     assert _main.integer_in_range(str(obs)) == int(obs)
+
+
+def test_delete_file_if_exists_deletes_a_file(tmp_path, capsys):
+    f = tmp_path / "f.log"
+    f.write_text("log")
+    _main.delete_file_if_exists(f)
+    out, err = capsys.readouterr()
+    assert not f.exists()
+    assert out == f"Deleting file {f}\n"
+
+
+def test_delete_file_if_exists_no_file(tmp_path, capsys):
+    f = tmp_path / "f.log"
+    _main.delete_file_if_exists(f)
+    out, err = capsys.readouterr()
+    assert out == ""
 
 
 @pytest.mark.usefixtures("mock_sas_session")
@@ -98,14 +113,14 @@ def test_valid_sas_file(tmp_path):
     assert _main.valid_sas_file(str(f)) == str(f)
 
 
-def test_valid_sas_file_invalid_ext(tmp_path, capsys):
+def test_valid_sas_file_invalid_ext(tmp_path):
     f = tmp_path / "f.txt"
     f.touch()
     with pytest.raises(argparse.ArgumentTypeError):
         _main.valid_sas_file(str(f))
 
 
-def test_valid_sas_file_os_error(tmp_path, capsys):
+def test_valid_sas_file_os_error(tmp_path):
     f = tmp_path / "f.sas"
     with pytest.raises(argparse.ArgumentTypeError):
         _main.valid_sas_file(str(f))
@@ -263,7 +278,7 @@ def test_run_program_diverts_to_run_simple(
         assert _main.run_sas_program(args) == 0
         run_simple.assert_called_once()
         out, err = capsys.readouterr()
-        assert not os.path.exists(tmp_path / "1234_prog.log")
+        assert not (tmp_path / "1234_prog.log").exists()
 
 
 iter = 0
@@ -311,7 +326,7 @@ def test_run_program_live_log(
             side_effect=run_for_number_of_lines
         )
         assert _main.run_sas_program(args) == 0
-        assert os.path.exists(log)
+        assert not log.exists()
     iter = 0
 
 
@@ -337,4 +352,4 @@ def test_run_program_no_live_log(
         sas_enter.submit = mock.Mock(return_value={"LOG": "", "LST": ""})
         monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
         assert _main.run_sas_program(args) == 0
-        assert os.path.exists(log)
+        assert not log.exists()
