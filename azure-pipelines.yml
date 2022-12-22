@@ -1,22 +1,19 @@
-
 trigger:
 - main
 
+resources:
+  repositories:
+    - repository: asottile
+      type: github
+      endpoint: jordanamos
+      name: asottile/azure-pipeline-templates
+      ref: refs/tags/v2.5.2
+
+
 pool: jordan-pool
 
-steps:
-- task: UsePythonVersion@0
-  inputs:
-    versionSpec: '3.7'
-    addToPath: true
-  displayName: 'Use Python 3.7'
-
-- script: |
-    python -m pip install --upgrade pip
-    pip install -r requirements-dev.txt
-  displayName: 'Install dependencies'
-
-- script: |
-    pip install pytest pytest-azurepipelines
-    pytest
-  displayName: 'pytest'
+jobs:
+- template: job--python-tox.yml@asottile
+  parameters:
+    toxenvs: [py310]
+    os: linux
