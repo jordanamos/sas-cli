@@ -4,9 +4,6 @@ trigger:
 pool: jordan-pool
 
 steps:
-- script: |
-    git config --global http.proxy http://localhost:3663
-  displayName: 'proxy'
 - task: UsePythonVersion@0
   inputs:
     versionSpec: '3.10'
