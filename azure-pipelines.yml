@@ -6,21 +6,17 @@
 trigger:
 - main
 
-pool:
-  vmImage: ubuntu-latest
+resources:
+  repositories:
+    - repository: asottile
+      type: github
+      endpoint: github
+      name: asottile/azure-pipeline-templates
+      ref: refs/tags/v2.4.1
 
-steps:
-- task: UsePythonVersion@0
-  inputs:
-    versionSpec: '3.10'
-  displayName: 'Use Python 3.10'
+jobs:
+- template: job--python-tox.yml@asottile
+  parameters:
+    toxenvs: [py310]
+    os: linux
 
-- script: |
-    python -m pip install --upgrade pip
-    pip install -r requirements-dev.txt
-  displayName: 'Install dependencies'
-
-- script: |
-    pip install pytest pytest-azurepipelines
-    pytest
-  displayName: 'pytest'
