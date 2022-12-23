@@ -87,7 +87,7 @@ def run_sas_program_simple(sas: SASsession, args: argparse.Namespace) -> int:
             f"Started running {args.program_path} at "
             f"{time.strftime('%H:%M:%S', time.localtime())}",
         )
-        result = sas.submit(program_code, printto=True)
+        result = sas.submit(program_code, printto=True, prompt=args.prompts)
         saspy_logger.info(
             f"Finished running {args.program_path} at "
             f"{time.strftime('%H:%M:%S', time.localtime())}",
@@ -115,6 +115,7 @@ def run_sas_program(args: argparse.Namespace) -> int:
     """
     with SASsession() as sas:
         if not (args.sas_server_logging_dir and args.local_logging_dir):
+            saspy_logger.info("Outfile config not set. Using mode: 'Basic'")
             return run_sas_program_simple(sas, args)
 
         # attempt to setup live logging and scaproc to handle outputs
@@ -144,8 +145,14 @@ def run_sas_program(args: argparse.Namespace) -> int:
             )
             # no longer logging to file, delete the file we made above
             delete_file_if_exists(log_file_local)
+            saspy_logger.info(
+                f"SAS unable to write to '{log_file_sas}'. Using mode: 'Basic'",
+            )
             return run_sas_program_simple(sas, args)
         else:
+
+            saspy_logger.info("Outfile config set. Using mode: 'Custom'")
+
             with open(args.program_path) as f:
                 program_code = f.read()
 
@@ -174,12 +181,13 @@ def run_sas_program(args: argparse.Namespace) -> int:
                             sas.submit,
                             code=program_code,
                             printto=True,
+                            prompt=args.prompts,
                         )
                         loglines = read_new_lines(log_file)
                         for line in loglines:
                             print(line, end="")
             else:
-                sas.submit(program_code, printto=True)
+                sas.submit(program_code, printto=True, prompt=args.prompts)
 
             with open(str(log_file_local)) as log:
                 errors: Generator[list[str], None, None] = (
@@ -310,6 +318,13 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         action="store_false",
         help="outfiles including logs won't be deleted after execution",
     )
+    run_parser.add_argument(
+        "--prompt",
+        nargs="*",
+        dest="prompts",
+        help="creates a macro variable with the given name and prompts for the "
+        "value at runtime",
+    )
     # data parser
     data_parser = subparsers.add_parser(
         "data",
@@ -381,6 +396,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     ret = 0
 
     if args.command == "run":
+        args.prompts = (
+            {prompt: False for prompt in args.prompts} if args.prompts else {}
+        )
         ret = run_sas_program(args)
     elif args.command == "data":
         ret = get_sas_data(args)
