@@ -5,7 +5,7 @@ resources:
   repositories:
     - repository: tox
       type: github
-      endpoint: github
+      endpoint: jordanamos
       name: tox-dev/azure-pipelines-template
       ref: refs/tags/0.2
 
