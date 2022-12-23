@@ -1,24 +1,20 @@
 trigger:
 - main
 
-resources:
-  repositories:
-    - repository: tox
-      type: github
-      endpoint: jordanamos
-      name: tox-dev/azure-pipelines-template
-      ref: refs/tags/0.2
-
-
 pool: jordan-pool
 
-jobs:
-  - template: run-tox-env.yml@tox
-    parameters:
-      tox_version: ""
-      jobs:
-        py310:
-          image: [linux]
-      coverage:
-        with_toxenv: "coverage"
-        for_envs: [py310]
+steps:
+- task: UsePythonVersion@0
+  inputs:
+    versionSpec: '3.8'
+  displayName: 'Use Python 3.8'
+
+- script: |
+    python -m pip install --upgrade pip
+    pip install -r requirements-dev.txt
+  displayName: 'Install dependencies'
+
+- script: |
+    pip install pytest pytest-azurepipelines
+    pytest
+  displayName: 'pytest'
