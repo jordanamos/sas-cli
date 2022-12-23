@@ -68,7 +68,8 @@ def get_outputs(scaproc_file: Path) -> dict[str, set[str]] | None:
                 segments = line.split()
                 key = segments.pop(0)
                 value = segments.pop()
-                ret[key].add(value)
+                if key in keys:
+                    ret[key].add(value)
             return ret
     else:
         print(
