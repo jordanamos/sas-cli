@@ -3,17 +3,22 @@ trigger:
 
 resources:
   repositories:
-    - repository: asottile
+    - repository: tox
       type: github
-      endpoint: jordanamos
-      name: asottile/azure-pipeline-templates
-      ref: refs/tags/v2.5.2
+      endpoint: github
+      name: tox-dev/azure-pipelines-template
+      ref: refs/tags/0.2
 
 
 pool: jordan-pool
 
 jobs:
-- template: job--python-tox.yml@asottile
-  parameters:
-    toxenvs: [py310]
-    os: linux
+  - template: run-tox-env.yml@tox
+    parameters:
+      tox_version: ""
+      jobs:
+        py310:
+          image: [linux]
+      coverage:
+        with_toxenv: "coverage"
+        for_envs: [py310]
