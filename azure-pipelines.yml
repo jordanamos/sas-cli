@@ -7,5 +7,5 @@ steps:
 - task: UsePythonVersion@0
   inputs:
     versionSpec: '3.10'
-    githubToken: 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
+    githubToken: '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'
   displayName: 'Use Python 3.10'
