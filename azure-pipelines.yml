@@ -6,15 +6,5 @@ pool: jordan-pool
 steps:
 - task: UsePythonVersion@0
   inputs:
-    versionSpec: '3.8'
-  displayName: 'Use Python 3.8'
-
-- script: |
-    python3 -m pip install --upgrade pip
-    pip install -r requirements-dev.txt
-  displayName: 'Install dependencies'
-
-- script: |
-    pip install pytest pytest-azurepipelines
-    pytest
-  displayName: 'pytest'
+    versionSpec: '3.10'
+  displayName: 'Use Python 3.10'
