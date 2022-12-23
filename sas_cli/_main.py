@@ -3,19 +3,18 @@ import concurrent.futures
 import configparser
 import importlib.metadata as importlib_metadata
 import os
-import pathlib
+import re
 import sys
 import time
 from collections.abc import Generator
 from collections.abc import Sequence
+from pathlib import Path
+from pathlib import PureWindowsPath
 from typing import TextIO
 
+import tabulate
 from saspy import logger as saspy_logger
 from saspy import SASsession
-from saspy.sasexceptions import SASConfigNotFoundError
-from saspy.sasexceptions import SASConfigNotValidError
-from saspy.sasexceptions import SASIOConnectionError
-from saspy.sasexceptions import SASIONotSupportedError
 
 MAX_OUTPUT_OBS = 10000
 SAS_CLI_REPLACEMENT_IDENTIFIER = "{{%sas%}}"
@@ -38,7 +37,6 @@ def valid_sas_file(filepath: str) -> str:
 
 
 def integer_in_range(obs: str) -> int:
-
     if int(obs) < 1 or int(obs) > MAX_OUTPUT_OBS:
         raise argparse.ArgumentTypeError(
             f"The specified number of output observations '{obs}' must be "
@@ -47,129 +45,131 @@ def integer_in_range(obs: str) -> int:
     return int(obs)
 
 
-def get_sas_session() -> SASsession:
-    try:
-        return SASsession()
-    except SASIOConnectionError:
-        raise
-    except (
-        SASConfigNotValidError,
-        SASConfigNotFoundError,
-        SASIONotSupportedError,
-        AttributeError,
-    ) as e:
-        message = (
-            "\nSaspy configuration error. Configuration file "
-            f"not found or is not valid: {e}"
-        )
-        print(message, file=sys.stderr)
-        raise SASConfigNotValidError(message)
+def delete_file_if_exists(file: Path) -> None:
+    if os.path.exists(str(file)):
+        print(f"Deleting file {file}")
+        file.unlink(missing_ok=True)
 
 
-def prepare_log_files(args: argparse.Namespace) -> tuple[str, str]:
-    """
-    Uses the config settings set in specified config
-    file (default config.ini):
-        - sas_server_logging_dir
-        - local_logging_dir
+def get_outputs(scaproc_file: Path) -> dict[str, set[str]] | None:
+    def get_jobsplit_lines(scaproc_file: TextIO) -> Generator[str, None, None]:
+        for line in scaproc_file:
+            if "JOBSPLIT" in line and "OUTPUT" in line:
+                line = re.sub(r"\/\* JOBSPLIT: ", "", line).replace(" */", "")
+                yield line
 
-    Requires both to be set, otherwise creates a 'logs' directory in the parent
-    directory of which the program is being executed from
-
-    Returns a tuple (2):
-        index 0 = the path to the SAS log to be used by SAS program
-        index 1 = the local mount point to that same directory
-    """
-    path = pathlib.Path(args.program_path)
-    log_file_name = f"{time.strftime('%H%M%S', time.localtime())}_{path.stem}.log"
-
-    if args.sas_server_logging_dir and args.local_logging_dir:
-        # predefined logging directories set
-        # SAS windows server
-        log_file_sas = str(
-            pathlib.PureWindowsPath(args.sas_server_logging_dir) / log_file_name
-        )
-        log_file_local = str(pathlib.Path(args.local_logging_dir) / log_file_name)
+    # https://documentation.sas.com/doc/en/pgmsascdc/9.4_3.5/proc/p0k5uaxpaz2uzin1qvbqmmafnqtl.htm
+    if scaproc_file.exists():
+        with open(scaproc_file) as f:
+            loglines = get_jobsplit_lines(f)
+            keys = ["DATASET", "FILE"]
+            ret: dict[str, set[str]] = {key: set() for key in keys}
+            for line in loglines:
+                segments = line.split()
+                key = segments.pop(0)
+                value = segments.pop()
+                if key in keys:
+                    ret[key].add(value)
+            return ret
     else:
-        # no predefined logging directory set in config
-        # potentially used for local installs of SAS - Untested
-        logging_dir = path.parent.absolute() / "logs"
-        log_file_sas = log_file_local = str(logging_dir / log_file_name)
-
-    return (log_file_sas, log_file_local)
-
-
-def delete_file_if_exists(path: str) -> None:
-    if os.path.exists(path):
-        os.remove(path)
-
-
-def setup_live_log(args: argparse.Namespace, sas: SASsession) -> tuple[str, str] | None:
-    """
-    Creates the log file at the given directory and checks to see if SAS can see it
-    and if so, returns a tuple containing the SAS path and the local path to the log
-    file else deletes the created file and returns None
-    """
-    log_file_sas, log_file_local = prepare_log_files(args)
-
-    # create the local file if it doesnt exist
-    pathlib.Path(log_file_local).parent.mkdir(exist_ok=True, parents=True)
-    pathlib.Path(log_file_local).touch()
-    saspy_logger.info(f"Log file is '{log_file_local}'")
-    # this SAS function returns 1 if the dir exists or 0
-    sas.submit(f"%LET dir_exists = %SYSFUNC(FILEEXIST({log_file_sas}));")
-    # Check if SAS can see the newly created log file
-    if sas.symget("dir_exists", int()) == 1:
-        return (log_file_sas, log_file_local)
-    else:
-        message = (
-            f"SAS unable to log to file {log_file_sas} or the local file "
-            f"{log_file_local} does not exist. Check config in {args.config}\n"
-            "Printing log after execution."
+        print(
+            f"Unable to get output information check {scaproc_file} exists.",
+            file=sys.stderr,
         )
-        print(message)
-        delete_file_if_exists(log_file_local)
         return None
+
+
+def run_sas_program_simple(sas: SASsession, args: argparse.Namespace) -> int:
+    try:
+        with open(args.program_path) as f:
+            program_code = f.read()
+        saspy_logger.info(
+            f"Started running {args.program_path} at "
+            f"{time.strftime('%H:%M:%S', time.localtime())}",
+        )
+        result = sas.submit(program_code, printto=True)
+        saspy_logger.info(
+            f"Finished running {args.program_path} at "
+            f"{time.strftime('%H:%M:%S', time.localtime())}",
+        )
+        if args.show_log:
+            print(result["LOG"], end="")
+        sys_err_text = sas.SYSERRORTEXT()
+        sys_err = sas.SYSERR()
+
+        if sys_err_text or sys_err > 1:
+            message = f"{sys_err}: {sys_err_text}"
+            raise RuntimeError(message)
+    except RuntimeError as e:
+        print(
+            f"\nAn error occured while running '{args.program_path}': {e}",
+            file=sys.stderr,
+        )
+        return 1
+    return 0
 
 
 def run_sas_program(args: argparse.Namespace) -> int:
     """
     Runs a SAS program file
     """
-    try:
-        with open(args.program_path) as f:
-            program_code = f.read()
+    with SASsession() as sas:
+        if not (args.sas_server_logging_dir and args.local_logging_dir):
+            return run_sas_program_simple(sas, args)
 
-        with get_sas_session() as sas:
-            log_file_paths = None
+        # attempt to setup live logging and scaproc to handle outputs
+        args.sas_server_logging_dir = PureWindowsPath(args.sas_server_logging_dir)
+        args.local_logging_dir = Path(args.local_logging_dir)
 
-            if args.show_log:
-                log_file_paths = setup_live_log(args, sas)
+        base_file_name = (
+            f"{time.strftime('%H%M%S', time.localtime())}_"
+            f"{Path(args.program_path).stem}"
+        )
 
-            start_time = time.localtime()
-            saspy_logger.info(
-                f"Started running program: {args.program_path} at "
-                f"{time.strftime('%H:%M:%S', start_time)}",
+        log_file_sas = args.sas_server_logging_dir / (base_file_name + ".log")
+        log_file_local = args.local_logging_dir / (base_file_name + ".log")
+        scaproc_file_sas = args.sas_server_logging_dir / (
+            base_file_name + "_scaproc.txt"
+        )
+        scaproc_file_local = args.local_logging_dir / (base_file_name + "_scaproc.txt")
+        log_file_local.parent.mkdir(exist_ok=True, parents=True)
+        log_file_local.touch()
+        # Check if SAS can see the newly created log file
+        # this SAS function returns 1 if the file exists or 0
+        sas.submit(f"%LET dir_exists = %SYSFUNC(FILEEXIST({log_file_sas}));")
+        if not sas.symget("dir_exists", int()) == 1:
+            print(
+                f"SAS unable to log to '{log_file_sas}' or '{log_file_local}'"
+                f" does not exist. Check config in {args.config}\n"
             )
+            # no longer logging to file, delete the file we made above
+            delete_file_if_exists(log_file_local)
+            return run_sas_program_simple(sas, args)
+        else:
+            with open(args.program_path) as f:
+                program_code = f.read()
 
-            if log_file_paths:
-                log_file_sas, log_file_local = log_file_paths
-                logging_code_suffix = f'PROC PRINTTO LOG="{log_file_sas}"; RUN;\n'
-                # prepend code to direct SAS to log to file
-                # subsequent PROC PRINTTO calls will override this and break the log
-                program_code = logging_code_suffix + program_code
+            program_code = (
+                f'PROC SCAPROC; RECORD "{scaproc_file_sas}"; RUN;\n'
+                + f'PROC PRINTTO LOG="{log_file_sas}"; RUN;\n'
+                + program_code
+                + "\nPROC SCAPROC; WRITE; RUN;"
+            )
+            if args.show_log:
+                # read the log file as it is being written to by SAS.
+                # a live log is better than getting the log AFTER the program
+                # has executed particularly for longer running programs
                 with concurrent.futures.ThreadPoolExecutor() as ex:
 
                     def read_new_lines(file: TextIO) -> Generator[str, None, None]:
-                        # go to end of file
-                        file.seek(0, 2)
                         while code_runner.running():
                             line = file.readline()
                             if not line:
                                 continue
                             yield line
 
-                    with open(log_file_local) as log_file:
+                    with open(str(log_file_local)) as log_file:
+                        log_file.seek(0, 2)
                         code_runner = ex.submit(
                             sas.submit,
                             code=program_code,
@@ -178,46 +178,26 @@ def run_sas_program(args: argparse.Namespace) -> int:
                         loglines = read_new_lines(log_file)
                         for line in loglines:
                             print(line, end="")
-
-                    result = code_runner.result()
-                    # delete the log file
-                    delete_file_if_exists(log_file_local)
             else:
-                result = sas.submit(program_code, printto=True)
-                if args.show_log:
-                    print(result["LOG"])
+                sas.submit(program_code, printto=True)
 
-            end_time = time.localtime()
-            saspy_logger.info(
-                f"Finished running program: {args.program_path} at "
-                f"{time.strftime('%H:%M:%S', end_time)}\n",
-            )
-
-            sas_output = result["LST"]
-            sys_err = sas.SYSERR()
-            sys_err_text = sas.SYSERRORTEXT()
-        if sys_err_text or sys_err > 6:
-            message = f"{sys_err}: {sys_err_text}"
-            if not args.show_log:
-                show_log = input(
-                    "Do you wish to view the log before exiting? [y]es / [n]o:"
+            with open(str(log_file_local)) as log:
+                errors: Generator[list[str], None, None] = (
+                    [f"{log_file_local}:{num}", error_line]
+                    for num, error_line in enumerate(log, 1)
+                    if error_line.startswith("ERROR")
                 )
-                if show_log.lower() in ["y", "yes", "si"]:
-                    print(result["LOG"])
-            raise RuntimeError(message)
-        if sas_output:
-            print(f"\nOutput:\n{sas_output}")
-    except RuntimeError as e:
-        print(
-            f"\nAn error occured while running '{args.program_path}': {e}",
-            file=sys.stderr,
-        )
-        return 1
-    except (
-        SASIOConnectionError,
-        SASConfigNotValidError,
-    ):
-        return 1
+                headers = ["Log Line", "Error Text"]
+                print(f"Errors:\n\n{tabulate.tabulate(errors, headers=headers)}")
+                outputs = get_outputs(scaproc_file_local)
+                if outputs:
+                    table = tabulate.tabulate(outputs, headers=list(outputs.keys()))
+                    print(f"\nOutputs:\n\n {table}\n")
+
+    # clean up output files
+    if args.clean_up:
+        delete_file_if_exists(log_file_local)
+        delete_file_if_exists(scaproc_file_local)
     return 0
 
 
@@ -225,19 +205,13 @@ def get_sas_lib(args: argparse.Namespace) -> int:
     """
     List the members or datasets within a SAS library
     """
-    try:
-        with get_sas_session() as sas:
-            list_of_tables = sas.list_tables(
-                args.libref,
-                results="pandas",
-            )
-            if list_of_tables is not None:
-                print(list_of_tables)
-    except (
-        SASIOConnectionError,
-        SASConfigNotValidError,
-    ):
-        return 1
+    with SASsession() as sas:
+        list_of_tables = sas.list_tables(
+            args.libref,
+            results="pandas",
+        )
+        if list_of_tables is not None:
+            print(list_of_tables)
     return 0
 
 
@@ -247,8 +221,8 @@ def get_sas_data(args: argparse.Namespace) -> int:
     or info about the dataset if the --info-only(-i) flag is set
     (PROC DATASETS)
     """
-    try:
-        with get_sas_session() as sas:
+    with SASsession() as sas:
+        try:
             data = sas.sasdata(
                 table=args.dataset,
                 libref=args.libref,
@@ -260,23 +234,18 @@ def get_sas_data(args: argparse.Namespace) -> int:
                 },
                 results="PANDAS",
             )
-            try:
-                # this is used to parse the dsopts and get an exception we can handle
-                # rather than a crappy SAS log that would otherwise be displayed
-                # with a direct to_df() call
-                column_info = data.columnInfo()
-                if args.info_only:
-                    print(column_info)
-                else:
-                    print(data.to_df())
-            except ValueError as e:
-                print(e, file=sys.stderr)
-                return 1
-    except (
-        SASIOConnectionError,
-        SASConfigNotValidError,
-    ):
-        return 1
+            # this is used to parse the dsopts and get an exception we can handle
+            # rather than a crappy SAS log that would otherwise be displayed
+            # with a direct to_df() call
+            column_info = data.columnInfo()
+            if args.info_only:
+                print(column_info)
+                pass
+            else:
+                print(data.to_df())
+        except ValueError as e:
+            print(e, file=sys.stderr)
+            return 1
     return 0
 
 
@@ -293,7 +262,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=CONFIG_FILE,
     )
 
-    config_args, remaining_args = config_parser.parse_known_args(argv)
+    config_args, _ = config_parser.parse_known_args(argv)
 
     logging_defaults = {
         "sas_server_logging_dir": "",
@@ -332,9 +301,15 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--show-log",
         dest="show_log",
         action="store_true",
-        help="displays the SAS log once the program has finished executing",
+        help="attemps to display the live SAS log during execution using the settings "
+        f"in {config_args.config}, otherwise after program execution",
     )
-
+    run_parser.add_argument(
+        "--no-clean-up",
+        dest="clean_up",
+        action="store_false",
+        help="outfiles including logs won't be deleted after execution",
+    )
     # data parser
     data_parser = subparsers.add_parser(
         "data",
@@ -404,6 +379,7 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
     ret = 0
+
     if args.command == "run":
         ret = run_sas_program(args)
     elif args.command == "data":

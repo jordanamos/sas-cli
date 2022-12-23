@@ -1,9 +1,6 @@
 import argparse
-import os
-from io import StringIO
 from unittest import mock
 
-import pandas as pd
 import pytest
 
 from sas_cli import _main
@@ -13,16 +10,11 @@ from sas_cli import _main
 def mock_sas_session(request):
 
     with mock.patch("sas_cli._main.SASsession") as sas:
-        sas.return_value.__enter__.return_value.submit = mock.Mock(
-            return_value={
-                "LOG": "",
-                "LST": "",
-            },
-        )
-        sas.return_value.__enter__.return_value.SYSERR = mock.Mock(
+
+        sas.SYSERR = mock.Mock(
             return_value=request.param.get("syserr", 0),
         )
-        sas.return_value.__enter__.return_value.SYSERRORTEXT = mock.Mock(
+        sas.SYSERRORTEXT = mock.Mock(
             return_value=request.param.get("syserrtext", ""),
         )
         yield sas
@@ -30,7 +22,13 @@ def mock_sas_session(request):
 
 # tests
 def test_main_trivial():
-    assert _main.main(()) == 0
+    with mock.patch("sas_cli._main.SASsession"):
+        assert _main.main(()) == 0
+
+
+def test_main_trivial_noop():
+    with pytest.raises(SystemExit):
+        _main.main(("--help",))
 
 
 def test_parse_config_args(tmp_path):
@@ -53,14 +51,9 @@ def test_parse_config_args(tmp_path):
         _main.MAX_OUTPUT_OBS + 1,
     ),
 )
-def test_integer_in_range_error(obs, capsys):
+def test_integer_in_range_error(obs):
     with pytest.raises(argparse.ArgumentTypeError):
         _main.integer_in_range(str(obs))
-        out, err = capsys.readouterr()
-        assert (
-            err == f"The specified number of output observations '{obs}' must be "
-            "between 1 and {_main.MAX_OUTPUT_OBS:,}"
-        )
 
 
 @pytest.mark.parametrize(
@@ -75,24 +68,43 @@ def test_integer_in_range(obs):
     assert _main.integer_in_range(str(obs)) == int(obs)
 
 
-def test_get_sas_data_is_called():
-    with mock.patch("sas_cli._main.get_sas_data", return_value=0) as m:
+def test_delete_file_if_exists_deletes_a_file(tmp_path, capsys):
+    f = tmp_path / "f.log"
+    f.write_text("log")
+    _main.delete_file_if_exists(f)
+    out, err = capsys.readouterr()
+    assert not f.exists()
+    assert out == f"Deleting file {f}\n"
+
+
+def test_delete_file_if_exists_no_file(tmp_path, capsys):
+    f = tmp_path / "f.log"
+    _main.delete_file_if_exists(f)
+    out, err = capsys.readouterr()
+    assert out == ""
+
+
+@mock.patch("sas_cli._main.SASsession")
+def test_get_sas_data_is_called(_):
+    with mock.patch("sas_cli._main.get_sas_data", return_value=0) as get_sas_data:
         _main.main(["data", "test_table"])
-        m.assert_called_once()
+        get_sas_data.assert_called_once()
 
 
-def test_run_sas_program_is_called(tmp_path):
+@mock.patch("sas_cli._main.SASsession")
+def test_run_sas_program_is_called(_, tmp_path):
     f = tmp_path / "f.sas"
     f.write_text("%PUT hello world;")
-    with mock.patch("sas_cli._main.run_sas_program", return_value=0) as m:
+    with mock.patch("sas_cli._main.run_sas_program", return_value=0) as run_sas_program:
         _main.main(["run", str(f)])
-        m.assert_called_once()
+        run_sas_program.assert_called_once()
 
 
-def test_get_sas_lib_is_called():
-    with mock.patch("sas_cli._main.get_sas_lib", return_value=0) as m:
+@mock.patch("sas_cli._main.SASsession")
+def test_get_sas_lib_is_called(_):
+    with mock.patch("sas_cli._main.get_sas_lib", return_value=0) as get_sas_lib:
         _main.main(["lib", "c_tst"])
-        m.assert_called_once()
+        get_sas_lib.assert_called_once()
 
 
 def test_valid_sas_file(tmp_path):
@@ -101,137 +113,95 @@ def test_valid_sas_file(tmp_path):
     assert _main.valid_sas_file(str(f)) == str(f)
 
 
-def test_valid_sas_file_invalid_ext(tmp_path, capsys):
+def test_valid_sas_file_invalid_ext(tmp_path):
     f = tmp_path / "f.txt"
     f.touch()
     with pytest.raises(argparse.ArgumentTypeError):
         _main.valid_sas_file(str(f))
-        out, err = capsys.readouterr()
-        assert err == f"The file '{f}' is not a valid .sas file"
 
 
-def test_valid_sas_file_os_error(tmp_path, capsys):
+def test_valid_sas_file_os_error(tmp_path):
     f = tmp_path / "f.sas"
-    with pytest.raises(argparse.ArgumentTypeError) as e:
+    with pytest.raises(argparse.ArgumentTypeError):
         _main.valid_sas_file(str(f))
+
+
+@pytest.mark.parametrize(("info_only", "ret"), ((True, 1), (False, 0)))
+def test_get_sas_data(info_only, ret, capsys):
+    args = mock.Mock()
+    args.info_only = info_only
+
+    with mock.patch("sas_cli._main.SASsession") as sas:
+        sasdata = sas.return_value.__enter__.return_value.sasdata
+        sasdata.return_value.to_df = mock.Mock(return_value=ret)
+        sasdata.return_value.columnInfo = mock.Mock(return_value=ret)
+
+        assert _main.get_sas_data(args) == 0
+        sasdata.assert_called_once()
+        sasdata.return_value.columnInfo.assert_called_once()
+        if not info_only:
+            sasdata.return_value.to_df.assert_called_once()
         out, err = capsys.readouterr()
-        assert err == f"Can't open '{f}': {e}"
+        assert out == (str(ret) + "\n")
 
 
-def test_delete_file_if_exists(tmp_path):
+def test_get_sas_data_error():
+    args = mock.Mock()
+    with mock.patch("sas_cli._main.SASsession") as sas:
+        sasdata = sas.return_value.__enter__.return_value.sasdata
+        sasdata.return_value.columnInfo = mock.Mock(side_effect=ValueError)
+        assert _main.get_sas_data(args) == 1
+        sasdata.return_value.columnInfo.assert_called_once()
+
+
+def test_get_sas_lib():
+    args = mock.Mock()
+    with mock.patch("sas_cli._main.SASsession"):
+        assert _main.get_sas_lib(args) == 0
+
+
+def test_get_outputs(tmp_path):
     f = tmp_path / "f.txt"
-    f.touch()
-    _main.delete_file_if_exists(str(f))
-    assert not os.path.exists(str(f))
-
-
-def test_prepare_log_files(tmp_path, monkeypatch):
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    f = tmp_path / "f.sas"
-    args = mock.Mock()
-    args.program_path = f.name
-    args.sas_server_logging_dir = tmp_path
-    args.local_logging_dir = tmp_path
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    assert _main.prepare_log_files(args) == (
-        str(_main.pathlib.PureWindowsPath(tmp_path / "1234_f.log")),
-        str(_main.pathlib.Path(tmp_path / "1234_f.log")),
+    f.write_text(
+        r"""
+        /* JOBSPLIT: LIBNAME C_TST SPDE '\\tmp1234\SASData\unit\' */
+        /* JOBSPLIT: DATASET OUTPUT SEQ WORK._TMP.DATA */
+        /* JOBSPLIT: DATASET OUTPUT SEQ WORK._TMP.DATA */
+        /* JOBSPLIT: DATASET OUTPUT SEQ WORK._TMP2.DATA */
+        /* JOBSPLIT: LIBNAME WORK V9 'G:\SAS_Work\_TD3592_Jfgfdg1343_\Prc2' */
+        /* JOBSPLIT: DATASET INPUT MULTI C_TST.TEST_DATABASE.INDEX */
+        /* JOBSPLIT: LIBNAME C_TST SPDE '\\tmp1234\SASData\unit\' */
+        /* JOBSPLIT: FILE OUTPUT \\tmp1234\124051_test_program.log.txt */
+    """
     )
+    expected = {
+        "DATASET": {"WORK._TMP2.DATA", "WORK._TMP.DATA"},
+        "FILE": {"\\\\tmp1234\\124051_test_program.log.txt"},
+    }
+    assert _main.get_outputs(f) == expected
 
 
-@mock.patch("sas_cli._main.argparse.Namespace")
-def test_prepare_log_files_creates_logs_dir(args, tmp_path, monkeypatch):
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+def test_get_outputs_error(tmp_path, capsys):
+    f = tmp_path / "f.txt"
+    assert _main.get_outputs(f) is None
+    out, err = capsys.readouterr()
+    assert err is not None
+
+
+def test_run_program_simple(tmp_path, capsys):
     f = tmp_path / "f.sas"
+    f.write_text("%PUT hello world;")
     args = mock.Mock()
     args.program_path = f
-    args.sas_server_logging_dir = ""
-    args.local_logging_dir = ""
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    assert _main.prepare_log_files(args) == (
-        str(tmp_path / "logs" / "1234_f.log"),
-        str(tmp_path / "logs" / "1234_f.log"),
-    )
-
-
-@mock.patch("sas_cli._main.SASsession")
-def test_setup_live_log(
-    MockSASsession,
-    monkeypatch,
-    tmp_path,
-):
-    f = tmp_path / "f.sas"
-    args = mock.Mock()
-    args.config = "config.ini"
-    args.program_path = f
-    args.sas_server_logging_dir = tmp_path
-    args.local_logging_dir = tmp_path
-    MockSASsession.symget.return_value = 1
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    assert _main.setup_live_log(args, MockSASsession) == _main.prepare_log_files(args)
-    assert os.path.exists(tmp_path / "1234_f.log")
-
-
-@mock.patch("sas_cli._main.SASsession")
-def test_setup_live_log_not_exists(
-    MockSASsession,
-    monkeypatch,
-    tmp_path,
-):
-    f = tmp_path / "f.sas"
-    args = mock.Mock()
-    args.config = "config.ini"
-    args.program_path = f
-    args.sas_server_logging_dir = ""
-    args.local_logging_dir = ""
-    MockSASsession.symget.return_value = 0
-    monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
-    assert _main.setup_live_log(args, MockSASsession) is None
-    assert not os.path.exists(tmp_path / "1234_f.log")
-
-
-@mock.patch("sas_cli._main.SASsession.__init__", return_value=None)
-def test_get_sas_session(MockSASsession):
-    assert isinstance(_main.get_sas_session(), _main.SASsession)
-
-
-@pytest.mark.parametrize(
-    "exception_type",
-    (
-        _main.SASConfigNotValidError,
-        _main.SASConfigNotFoundError,
-        _main.SASIONotSupportedError,
-        AttributeError,
-    ),
-)
-@mock.patch("sas_cli._main.SASsession.__init__", return_value=None)
-def test_get_sas_session_config_error(MockSASsession, exception_type, tmp_path, capsys):
-    f = tmp_path / " config.ini"
-    MockSASsession.side_effect = exception_type(f)
-    with pytest.raises(_main.SASConfigNotValidError) as e:
-        _main.get_sas_session()
+    args.show_log = True
+    with mock.patch("sas_cli._main.SASsession") as sas:
+        log_msg = "log line 1"
+        sas.SYSERR = mock.Mock(return_value=0)
+        sas.SYSERRORTEXT = mock.Mock(return_value="")
+        sas.submit = mock.Mock(return_value={"LOG": log_msg, "LST": ""})
+        assert _main.run_sas_program_simple(sas, args) == 0
         out, err = capsys.readouterr()
-        assert err == "\nSaspy configuration error. Configuration file "
-        f"not found or is not valid: {e}"
-
-
-@mock.patch("sas_cli._main.SASsession.__init__", return_value=None)
-def test_get_sas_session_ioconnection_error(MockSASsession):
-    MockSASsession.side_effect = _main.SASIOConnectionError("msg")
-    with pytest.raises(_main.SASIOConnectionError):
-        _main.get_sas_session()
-
-
-def test_run_program_trivial(
-    mock_sas_session,
-    tmp_path,
-):
-    f = tmp_path / "f.sas"
-    f.write_text("%PUT hello world")
-    args = mock.Mock()
-    args.program_path = f
-    args.show_log = False
-    assert _main.run_sas_program(args) == 0
+        assert out == log_msg
 
 
 @pytest.mark.parametrize(
@@ -239,15 +209,22 @@ def test_run_program_trivial(
     [
         dict(
             syserr=1012,
-            syserrtext="File WORK.DOESNOTEXIST.DATA does not exist.",
+            syserrtext="SAS error message",
+        ),
+        dict(
+            syserr=0,
+            syserrtext="SAS error message",
+        ),
+        dict(
+            syserr=1012,
+            syserrtext="",
         ),
     ],
     indirect=True,
 )
-def test_run_program_runtime_error(
+def test_run_program_simple_runtime_error(
     mock_sas_session,
     capsys,
-    monkeypatch,
     tmp_path,
 ):
     f = tmp_path / "f.sas"
@@ -255,60 +232,124 @@ def test_run_program_runtime_error(
     args = mock.Mock()
     args.program_path = f
     args.show_log = False
-    monkeypatch.setattr("sys.stdin", StringIO("no"))
-    assert _main.run_sas_program(args) == 1
+    assert _main.run_sas_program_simple(mock_sas_session, args) == 1
     out, err = capsys.readouterr()
-    syserr = mock_sas_session.return_value.__enter__.return_value.SYSERR.return_value
-    syserrortext = (
-        mock_sas_session.return_value.__enter__.return_value.SYSERRORTEXT.return_value
-    )
     assert (
         err == f"\nAn error occured while running '{args.program_path}': "
-        f"{syserr}: {syserrortext}\n"
+        f"{mock_sas_session.SYSERR.return_value}: "
+        f"{mock_sas_session.SYSERRORTEXT.return_value}\n"
     )
 
 
-@mock.patch("sas_cli._main.setup_live_log")
-def test_run_program_no_live_log(setup_live_log, mock_sas_session, tmp_path):
-    f = tmp_path / "f.sas"
-    f.write_text("%PUT hello world")
+@pytest.mark.parametrize(
+    ("sas_dir", "local_dir"),
+    (
+        (None, None),
+        ("tmp_path", "tmp_path"),
+        (None, "tmp_path"),
+        ("tmp_path", None),
+    ),
+)
+@mock.patch("sas_cli._main.SASsession")
+def test_run_program_diverts_to_run_simple(
+    sas,
+    sas_dir,
+    local_dir,
+    request,
+    capsys,
+    tmp_path,
+    monkeypatch,
+):
+    p = tmp_path / "prog.sas"
+    p.write_text("%PUT hello world;")
+
     args = mock.Mock()
-    args.program_path = f
-    args.show_log = True
-    setup_live_log.return_value = None
-    assert _main.run_sas_program(args) == 0
+    args.program_path = p
+    args.show_log = False
+    args.sas_server_logging_dir = request.getfixturevalue(sas_dir) if sas_dir else None
+    args.local_logging_dir = request.getfixturevalue(local_dir) if local_dir else None
 
+    sas_enter = sas.return_value.__enter__.return_value
+    sas_enter.symget.return_value = mock.Mock(return_value=0)
 
-def test_get_sas_data(mock_sas_session):
-    args = mock.Mock()
-    args.dataset = "test_dataset"
-    args.info_only = False
-    args.command = "data"
-    args.libref = "c_tst"
-    args.obs = 10
-    mock_sas_session.return_value.__enter__.return_value.sasdata = mock.Mock()
-    mock_sas_session.return_value.__enter__.return_value.sasdata.return_value.to_df = (
-        mock.Mock(return_value=pd.DataFrame())
-    )
-    assert _main.get_sas_data(args) == 0
-
-
-def test_get_sas_data_error(mock_sas_session, capsys):
-    args = mock.Mock()
-    args.dataset = "test_dataset"
-    args.info_only = False
-    args.command = "data"
-    args.libref = "c_tst"
-    args.obs = 10
-    mock_sas_session.return_value.__enter__.return_value.sasdata = mock.Mock(
-        side_effect=ValueError
-    )
-    with pytest.raises(ValueError) as e:
-        assert _main.get_sas_data(args) == 1
+    with mock.patch("sas_cli._main.run_sas_program_simple") as run_simple:
+        monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+        run_simple.return_value = 0
+        assert _main.run_sas_program(args) == 0
+        run_simple.assert_called_once()
         out, err = capsys.readouterr()
-        assert err == e
+        assert not (tmp_path / "1234_prog.log").exists()
 
 
-def test_get_sas_lib(mock_sas_session):
+iter = 0
+
+
+@mock.patch("sas_cli._main.concurrent.futures.ThreadPoolExecutor.__enter__")
+def test_run_program_live_log(
+    threadpoolexecutor,
+    tmp_path,
+    monkeypatch,
+):
+
+    p = tmp_path / "prog.sas"
+    p.write_text("%PUT hello world;")
+
     args = mock.Mock()
-    assert _main.get_sas_lib(args) == 0
+    args.program_path = p
+    args.show_log = True
+    args.sas_server_logging_dir = tmp_path
+    args.local_logging_dir = tmp_path
+
+    log = tmp_path / "1234_prog.log"
+
+    def submit(*args, **kwargs):
+        log.write_text("log line 1\nlog line 2\nlog line 3\n")
+        scaproc = tmp_path / "1234_prog_scaproc.txt"
+        scaproc.write_text("/* JOBSPLIT: DATASET OUTPUT SEQ WORK._TMP.DATA */")
+        return mock.DEFAULT
+
+    global iter
+
+    def run_for_number_of_lines():
+        global iter
+        iter += 1
+        return iter <= (len(open(log).readlines()) + 1)
+
+    with mock.patch("sas_cli._main.SASsession") as sas:
+        sas_enter = sas.return_value.__enter__.return_value
+        sas_enter.symget = mock.Mock(return_value=1)
+        sas_enter.submit = mock.Mock(return_value={"LOG": "", "LST": ""})
+
+        monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+        threadpoolexecutor.return_value.submit = mock.Mock(side_effect=submit)
+        threadpoolexecutor.return_value.submit.return_value.running = mock.Mock(
+            side_effect=run_for_number_of_lines
+        )
+        assert _main.run_sas_program(args) == 0
+        assert not log.exists()
+    iter = 0
+
+
+def test_run_program_no_live_log(
+    tmp_path,
+    monkeypatch,
+):
+
+    p = tmp_path / "prog.sas"
+    p.write_text("%PUT hello world;")
+
+    args = mock.Mock()
+    args.program_path = p
+    args.show_log = False
+    args.sas_server_logging_dir = tmp_path
+    args.local_logging_dir = tmp_path
+
+    log = tmp_path / "1234_prog.log"
+
+    with mock.patch("sas_cli._main.SASsession") as sas:
+        sas_enter = sas.return_value.__enter__.return_value
+        sas_enter.symget = mock.Mock(return_value=1)
+        sas_enter.submit = mock.Mock(return_value={"LOG": "", "LST": ""})
+        monkeypatch.setattr(_main.time, "strftime", lambda self, _: "1234")
+        assert _main.run_sas_program(args) == 0
+        assert not log.exists()
