@@ -10,8 +10,8 @@ pool:
   vmImage: ubuntu-latest
 strategy:
   matrix:
-    Python37:
-      python.version: '3.7'
+    Python310:
+      python.version: '3.10'
 
 steps:
 - task: UsePythonVersion@0
@@ -22,10 +22,11 @@ steps:
 - script: |
     python -m pip install --upgrade pip
     pip install pipenv
-    pipenv install --dev
+    pipenv requirements --dev >> requirements.txt
+    pip install -r requirements.txt
   displayName: 'Install dependencies'
 
 - script: |
-    pipenv install pytest-azurepipelines
+    pip install pytest-azurepipelines
     pytest
   displayName: 'pytest'
