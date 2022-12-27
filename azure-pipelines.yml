@@ -24,7 +24,7 @@ steps:
     pip install pipenv
     pipenv requirements --dev >> requirements.txt
     pip install -r requirements.txt
-    pytest-azurepipelines
+    pip install pytest-azurepipelines
   displayName: 'Install dependencies'
 
 - script: |
