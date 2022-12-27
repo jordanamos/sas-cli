@@ -28,10 +28,6 @@ steps:
   displayName: 'Install dependencies'
 
 - script: |
-    pre-commit run --all-files
-  displayName: 'pre-commit'
-
-- script: |
     coverage erase
     coverage run -m pytest tests
     coverage report
