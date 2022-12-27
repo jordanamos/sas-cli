@@ -6,37 +6,16 @@
 trigger:
 - main
 
-pool:
-  vmImage: ubuntu-latest
-strategy:
-  matrix:
-    Python310:
-      python.version: '3.10'
+resources:
+  repositories:
+    - repository: asottile
+      type: github
+      endpoint: github
+      name: asottile/azure-pipeline-templates
+      ref: refs/tags/v2.5.2
 
-steps:
-- task: UsePythonVersion@0
-  inputs:
-    versionSpec: '$(python.version)'
-  displayName: 'Use Python $(python.version)'
-
-- script: |
-    python -m pip install --upgrade pip
-    pip install pipenv
-    pipenv requirements --dev >> requirements.txt
-    pip install -r requirements.txt
-    pip install pytest-azurepipelines
-  displayName: 'Install dependencies'
-
-- script: |
-    coverage erase
-    coverage run -m pytest tests
-    coverage report
-    coverage xml
-  displayName: 'run tests'
-
-- task: PublishTestResults@2
-  condition: succeededOrFailed()
-  inputs:
-    testResultsFiles: '**/test-output.xml'
-    testRunTitle: 'Publish test results'
-    
+jobs:
+- template: job--python-tox.yml@asottile
+  parameters:
+    toxenvs: [py39, py310, pre-commit]
+    os: linux
