@@ -32,5 +32,14 @@ steps:
   displayName: 'pre-commit'
 
 - script: |
-    pytest
-  displayName: 'pytest'
+    coverage erase
+    coverage run -m pytest tests
+    coverage report
+    coverage xml
+  displayName: 'run tests'
+
+- task: PublishTestResults@2
+  condition: succeededOrFailed()
+  inputs:
+    testResultsFiles: '**/test-output.xml'
+    testRunTitle: 'Publish test results'
