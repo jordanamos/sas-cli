@@ -43,3 +43,4 @@ steps:
   inputs:
     testResultsFiles: '**/test-output.xml'
     testRunTitle: 'Publish test results'
+    
